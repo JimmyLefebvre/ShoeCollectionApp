@@ -4,38 +4,42 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.MeetingRoom
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import com.example.shoecollectionapp.data.Chaussure
+import com.example.shoecollectionapp.data.Piece
+import com.example.shoecollectionapp.data.Section
+import com.example.shoecollectionapp.ui.theme.ShoeCollectionAppTheme
 import com.example.shoecollectionapp.ui.theme.ui.AddChaussureDialog
 import com.example.shoecollectionapp.ui.theme.ui.AddPieceDialog
-import com.example.shoecollectionapp.ui.theme.ui.ChaussureItem
-import com.example.shoecollectionapp.ui.theme.ShoeCollectionAppTheme
+import com.example.shoecollectionapp.ui.theme.ui.AddSectionDialog
+import com.example.shoecollectionapp.ui.theme.ui.CollectionScreen
+import com.example.shoecollectionapp.ui.theme.ui.ConfirmDeleteDialog
+import com.example.shoecollectionapp.ui.theme.ui.EditChaussureDialog
+import com.example.shoecollectionapp.ui.theme.ui.EditPieceDialog
+import com.example.shoecollectionapp.ui.theme.ui.EditSectionDialog
+import com.example.shoecollectionapp.ui.theme.ui.HomeScreen
+import com.example.shoecollectionapp.ui.theme.ui.OptionsScreen
+import com.example.shoecollectionapp.ui.theme.ui.StatsScreen
 import com.example.shoecollectionapp.viewmodel.MainViewModel
 
 class MainActivity : ComponentActivity() {
@@ -59,15 +63,35 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainScreen(viewModel: MainViewModel) {
+    var showWelcome by remember { mutableStateOf(true) }
+    var selectedTab by remember { mutableIntStateOf(0) } // 0 = Collection, 1 = Stats, 2 = Options
+
     val pieces by viewModel.pieces.collectAsState()
+    val sections by viewModel.sections.collectAsState()
     val chaussures by viewModel.chaussures.collectAsState()
+    val allChaussures by viewModel.allChaussures.collectAsState()
     val selectedPieceId by viewModel.selectedPieceId.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
-    val sortAscending by viewModel.sortAscending.collectAsState()
+    val sortOption by viewModel.sortOption.collectAsState()
+    val selectedBrandFilter by viewModel.selectedBrandFilter.collectAsState()
 
+    var activeMovingSectionId by remember { mutableStateOf<Long?>(null) }
+
+    val existingBrands = remember(allChaussures) {
+        allChaussures.map { it.marque }.filter { it.isNotBlank() }.distinct()
+    }
+
+    // Gestion des dialogues
     var showAddPieceDialog by remember { mutableStateOf(false) }
-    var showAddChaussureDialog by remember { mutableStateOf(false) }
+    var showAddSectionDialog by remember { mutableStateOf(false) }
+    var editingPiece by remember { mutableStateOf<Piece?>(null) }
+    var editingSection by remember { mutableStateOf<Section?>(null) }
 
+    var showAddChaussureDialog by remember { mutableStateOf(false) }
+    var editingChaussure by remember { mutableStateOf<Chaussure?>(null) }
+    var deletingChaussureId by remember { mutableStateOf<Long?>(null) }
+
+    // Dialogue : Ajouter une pièce
     if (showAddPieceDialog) {
         AddPieceDialog(
             onDismiss = { showAddPieceDialog = false },
@@ -78,96 +102,175 @@ fun MainScreen(viewModel: MainViewModel) {
         )
     }
 
-    if (showAddChaussureDialog && selectedPieceId != null) {
-        AddChaussureDialog(
-            onDismiss = { showAddChaussureDialog = false },
-            onConfirm = { nom, age, uri ->
-                viewModel.addChaussure(nom, age, uri, selectedPieceId!!)
-                showAddChaussureDialog = false
+    // Dialogue : Ajouter une section
+    if (showAddSectionDialog && selectedPieceId != null) {
+        AddSectionDialog(
+            onDismiss = { showAddSectionDialog = false },
+            onConfirm = { nom ->
+                viewModel.addSection(selectedPieceId!!, nom)
+                showAddSectionDialog = false
             }
         )
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        Text(
-            text = "Gestionnaire de Collection",
-            style = MaterialTheme.typography.headlineMedium
+    // Dialogue : Modifier / Supprimer une section
+    editingSection?.let { section ->
+        EditSectionDialog(
+            section = section,
+            onDismiss = { editingSection = null },
+            onConfirmSave = { newName ->
+                viewModel.updateSection(section, newName)
+                editingSection = null
+            },
+            onStartMoving = {
+                activeMovingSectionId = section.id
+                editingSection = null
+            },
+            onDeleteSection = {
+                viewModel.deleteSection(section.id)
+                editingSection = null
+            }
         )
+    }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // --- BARRE DES PIÈCES ---
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(text = "Pièces", style = MaterialTheme.typography.titleMedium)
-            Button(onClick = { showAddPieceDialog = true }) {
-                Text("+ Pièce")
+    // Dialogue : Modifier / Supprimer une pièce
+    editingPiece?.let { piece ->
+        EditPieceDialog(
+            piece = piece,
+            onDismiss = { editingPiece = null },
+            onConfirmSave = { newName ->
+                viewModel.updatePiece(piece.id, newName)
+                editingPiece = null
+            },
+            onDeletePiece = {
+                viewModel.deletePiece(piece.id)
+                editingPiece = null
             }
-        }
+        )
+    }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(pieces) { piece ->
-                FilterChip(
-                    selected = piece.id == selectedPieceId,
-                    onClick = { viewModel.selectPiece(piece.id) },
-                    label = { Text(piece.nom) }
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (selectedPieceId != null) {
-            // --- BARRERE DE RECHERCHE ET TRI ---
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { viewModel.updateSearchQuery(it) },
-                label = { Text("Rechercher une chaussure...") },
-                modifier = Modifier.fillMaxWidth()
+    // Dialogue : Ajouter une chaussure
+    if (showAddChaussureDialog) {
+        val targetPieceId = selectedPieceId ?: pieces.firstOrNull()?.id
+        if (targetPieceId != null) {
+            AddChaussureDialog(
+                existingBrands = existingBrands,
+                onDismiss = { showAddChaussureDialog = false },
+                onConfirm = { nom, marque, description, uri ->
+                    viewModel.addChaussure(nom, marque, description, uri, targetPieceId)
+                    showAddChaussureDialog = false
+                }
             )
+        }
+    }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedButton(onClick = { viewModel.toggleSortOrder() }) {
-                    Text(if (sortAscending) "Tri : Âge ↗" else "Tri : Âge ↘")
-                }
-
-                Button(onClick = { showAddChaussureDialog = true }) {
-                    Text("+ Chaussure")
-                }
+    // Dialogue : Modifier / Déplacer une chaussure
+    editingChaussure?.let { chaussure ->
+        EditChaussureDialog(
+            chaussure = chaussure,
+            pieces = pieces,
+            existingBrands = existingBrands,
+            onDismiss = { editingChaussure = null },
+            onConfirmSave = { nom, marque, description, newUri, newPieceId ->
+                viewModel.updateChaussure(chaussure, nom, marque, description, newUri, newPieceId)
+                editingChaussure = null
+            },
+            onDelete = {
+                viewModel.deleteChaussure(chaussure.id)
+                editingChaussure = null
             }
+        )
+    }
 
-            Spacer(modifier = Modifier.height(16.dp))
+    // Dialogue : Confirmation de suppression directe de chaussure
+    deletingChaussureId?.let { id ->
+        val itemToDelete = chaussures.find { it.id == id }
+        val titleName = itemToDelete?.nom ?: "cette chaussure"
+        ConfirmDeleteDialog(
+            title = "Supprimer la chaussure",
+            message = "Voulez-vous vraiment supprimer \"$titleName\" ?",
+            onConfirm = {
+                viewModel.deleteChaussure(id)
+                deletingChaussureId = null
+            },
+            onDismiss = { deletingChaussureId = null }
+        )
+    }
 
-            // --- LISTE DES CHAUSSURES ---
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(chaussures) { chaussure ->
-                    ChaussureItem(
-                        chaussure = chaussure,
-                        onDelete = { viewModel.deleteChaussure(chaussure.id) }
+    if (showWelcome) {
+        HomeScreen(
+            onLancer = { showWelcome = false }
+        )
+    } else {
+        Scaffold(
+            bottomBar = {
+                NavigationBar {
+                    NavigationBarItem(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        icon = { Icon(imageVector = Icons.Default.MeetingRoom, contentDescription = "Collection") },
+                        label = { Text("Collection") }
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        icon = { Icon(imageVector = Icons.Default.BarChart, contentDescription = "Statistiques") },
+                        label = { Text("Stats") }
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == 2,
+                        onClick = { selectedTab = 2 },
+                        icon = { Icon(imageVector = Icons.Default.Settings, contentDescription = "Options") },
+                        label = { Text("Options") }
                     )
                 }
             }
-        } else {
-            Text(
-                text = "Sélectionnez ou créez une pièce pour voir vos chaussures.",
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.padding(top = 32.dp)
-            )
+        ) { paddingValues ->
+            Surface(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+            ) {
+                when (selectedTab) {
+                    0 -> CollectionScreen(
+                        pieces = pieces,
+                        sections = sections,
+                        chaussures = chaussures,
+                        allChaussures = allChaussures,
+                        selectedPieceId = selectedPieceId,
+                        searchQuery = searchQuery,
+                        sortOption = sortOption,
+                        selectedBrandFilter = selectedBrandFilter,
+                        activeMovingSectionId = activeMovingSectionId,
+                        onActiveMovingSectionIdChange = { activeMovingSectionId = it },
+                        onSelectPiece = { pieceId -> viewModel.selectPiece(pieceId) },
+                        onOpenAddPiece = { showAddPieceDialog = true },
+                        onOpenEditPiece = { piece -> editingPiece = piece },
+                        onOpenAddSection = { showAddSectionDialog = true },
+                        onEditSection = { section -> editingSection = section },
+                        onOpenAddChaussure = { showAddChaussureDialog = true },
+                        onOpenEditChaussure = { chaussure -> editingChaussure = chaussure },
+                        onToggleFavorite = { chaussure -> viewModel.toggleFavorite(chaussure) },
+                        onDeleteChaussure = { id -> deletingChaussureId = id },
+                        onUpdatePosition = { id, x, y, sectionId -> viewModel.updateShoePosition(id, x, y, sectionId) },
+                        onUpdateSectionPosition = { id, x, y -> viewModel.updateSectionPosition(id, x, y) },
+                        onUpdateSectionSize = { id, w, h -> viewModel.updateSectionSize(id, w, h) },
+                        onUpdateSearchQuery = { query -> viewModel.updateSearchQuery(query) },
+                        onSelectSortOption = { option -> viewModel.setSortOption(option) },
+                        onSelectBrandFilter = { brand -> viewModel.setSelectedBrandFilter(brand) }
+                    )
+
+                    1 -> StatsScreen(
+                        pieces = pieces,
+                        allChaussures = allChaussures
+                    )
+
+                    2 -> OptionsScreen(
+                        pieces = pieces,
+                        chaussures = allChaussures
+                    )
+                }
+            }
         }
     }
 }
