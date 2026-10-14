@@ -6,10 +6,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.shoecollectionapp.data.AppDatabase
 import com.example.shoecollectionapp.data.Chaussure
+import com.example.shoecollectionapp.data.Etiquette
 import com.example.shoecollectionapp.data.Piece
 import com.example.shoecollectionapp.data.Section
 import com.example.shoecollectionapp.data.SortOption
-import com.example.shoecollectionapp.data.repository.CollectionRepository
 import com.example.shoecollectionapp.data.repository.CollectionRepositoryImpl
 import com.example.shoecollectionapp.utils.BrandUtils
 import com.example.shoecollectionapp.utils.ImageUtils
@@ -17,133 +17,138 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-class MainViewModel @JvmOverloads constructor(
-    application: Application,
-    private val repository: CollectionRepository = CollectionRepositoryImpl(
-        AppDatabase.getDatabase(application).appDao()
-    )
-) : AndroidViewModel(application) {
+class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-    // Pièce actuellement sélectionnée (null = aucune pièce sélectionnée)
-    val selectedPieceId = MutableStateFlow<Long?>(null)
+    private val repository: CollectionRepositoryImpl
 
-    // Recherche, Tri et Filtre par marque
-    val searchQuery = MutableStateFlow("")
-    val sortOption = MutableStateFlow(SortOption.NAME_ASC)
-    val selectedBrandFilter = MutableStateFlow<String?>(null)
+    val pieces: StateFlow<List<Piece>>
+    val allChaussures: StateFlow<List<Chaussure>>
 
-    // Liste de toutes les pièces
-    val pieces: StateFlow<List<Piece>> = repository.getAllPieces()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val _selectedPieceId = MutableStateFlow<Long?>(null)
+    val selectedPieceId: StateFlow<Long?> = _selectedPieceId.asStateFlow()
 
-    // Sections de la pièce sélectionnée
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _sortOption = MutableStateFlow(SortOption.DATE_DESC)
+    val sortOption: StateFlow<SortOption> = _sortOption.asStateFlow()
+
+    private val _selectedBrandFilter = MutableStateFlow<String?>(null)
+    val selectedBrandFilter: StateFlow<String?> = _selectedBrandFilter.asStateFlow()
+
     @OptIn(ExperimentalCoroutinesApi::class)
-    val sections: StateFlow<List<Section>> = selectedPieceId.flatMapLatest { pieceId ->
-        if (pieceId == null) {
-            flowOf(emptyList())
-        } else {
-            repository.getSectionsByPiece(pieceId)
-        }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val etiquettes: StateFlow<List<Etiquette>> = _selectedPieceId.flatMapLatest { pieceId ->
+        if (pieceId != null) repository.getEtiquettesByPiece(pieceId)
+        else flowOf(emptyList())
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
-    // Liste de toutes les chaussures (pour les statistiques et filtres globaux)
-    val allChaussures: StateFlow<List<Chaussure>> = repository.getAllChaussures()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    // Statistiques pour l'écran d'accueil
-    val totalPiecesCount: StateFlow<Int> = repository.getTotalPiecesCount()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
-
-    val totalChaussuresCount: StateFlow<Int> = repository.getTotalChaussuresCount()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
-
-    val recentChaussures: StateFlow<List<Chaussure>> = repository.getRecentChaussures(5)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    // Liste dynamique des chaussures combinant réactivement la pièce, la recherche, le filtre marque et le tri
     @OptIn(ExperimentalCoroutinesApi::class)
-    val chaussures: StateFlow<List<Chaussure>> = combine(
-        selectedPieceId,
-        searchQuery,
-        selectedBrandFilter,
-        sortOption
-    ) { pieceId, query, brand, sort ->
-        if (pieceId == null) {
-            flowOf(emptyList())
-        } else {
-            repository.getChaussuresByPiece(pieceId, query, brand, sort)
+    val sections: StateFlow<List<Section>> = _selectedPieceId.flatMapLatest { pieceId ->
+        if (pieceId != null) repository.getSectionsByPiece(pieceId)
+        else flowOf(emptyList())
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val chaussures: StateFlow<List<Chaussure>> = _selectedPieceId.flatMapLatest { pieceId ->
+        if (pieceId != null) repository.getChaussuresByPiece(pieceId, "", null, SortOption.DATE_DESC)
+        else flowOf(emptyList())
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    init {
+        val database = AppDatabase.getDatabase(application)
+        repository = CollectionRepositoryImpl(database.appDao())
+
+        pieces = repository.getAllPieces().stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+        allChaussures = repository.getAllChaussures().stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+        viewModelScope.launch {
+            pieces.collect { list ->
+                if (_selectedPieceId.value == null && list.isNotEmpty()) {
+                    _selectedPieceId.value = list.first().id
+                }
+            }
         }
-    }.flatMapLatest { it }
-    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
+
+    fun selectPiece(pieceId: Long) {
+        _selectedPieceId.value = pieceId
+    }
+
+    fun updateSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
+
+    fun setSortOption(option: SortOption) {
+        _sortOption.value = option
+    }
+
+    fun setSelectedBrandFilter(brand: String?) {
+        _selectedBrandFilter.value = brand
+    }
 
     // --- ACTIONS PIÈCES ---
     fun addPiece(nom: String) {
         viewModelScope.launch {
             val normalizedName = BrandUtils.normalizeBrand(nom)
-            val newId = repository.insertPiece(Piece(nom = normalizedName))
-            if (selectedPieceId.value == null) {
-                selectedPieceId.value = newId
-            }
+            val id = repository.insertPiece(Piece(nom = normalizedName))
+            _selectedPieceId.value = id
         }
     }
 
-    fun updatePiece(pieceId: Long, newNom: String) {
+    fun updatePiece(id: Long, newName: String) {
         viewModelScope.launch {
-            val normalizedName = BrandUtils.normalizeBrand(newNom)
-            repository.updatePiece(Piece(id = pieceId, nom = normalizedName))
+            val normalizedName = BrandUtils.normalizeBrand(newName)
+            repository.updatePiece(Piece(id = id, nom = normalizedName))
         }
     }
 
     fun deletePiece(pieceId: Long) {
         viewModelScope.launch {
             repository.deletePiece(pieceId)
-            if (selectedPieceId.value == pieceId) {
-                val remainingPieces = pieces.value.filter { it.id != pieceId }
-                selectedPieceId.value = remainingPieces.firstOrNull()?.id
+            if (_selectedPieceId.value == pieceId) {
+                _selectedPieceId.value = pieces.value.firstOrNull { it.id != pieceId }?.id
             }
         }
     }
 
-    fun selectPiece(pieceId: Long?) {
-        selectedPieceId.value = pieceId
-    }
-
-    // --- ACTIONS SECTIONS ---
-    fun addSection(pieceId: Long, nom: String) {
+    // --- ACTIONS ÉTIQUETTES FLOTTANTES (Anti-doublon) ---
+    fun addEtiquette(pieceId: Long, texte: String, x: Float = 0f, y: Float = 0f) {
         viewModelScope.launch {
-            val normalizedName = BrandUtils.normalizeBrand(nom)
-            repository.insertSection(Section(idPiece = pieceId, nom = normalizedName, width = 360f, height = 180f))
+            val trimmed = texte.trim()
+            val existing = etiquettes.value
+            val isDuplicate = existing.any { it.texte.equals(trimmed, ignoreCase = true) }
+            if (trimmed.isNotBlank() && !isDuplicate) {
+                repository.insertEtiquette(Etiquette(idPiece = pieceId, texte = trimmed, x = x, y = y))
+            }
         }
     }
 
-    fun updateSection(section: Section, newName: String) {
+    fun updateEtiquette(etiquette: Etiquette, newTexte: String) {
         viewModelScope.launch {
-            val normalizedName = BrandUtils.normalizeBrand(newName)
-            repository.updateSection(section.copy(nom = normalizedName))
+            val trimmed = newTexte.trim()
+            val existing = etiquettes.value
+            val isDuplicate = existing.any { it.id != etiquette.id && it.texte.equals(trimmed, ignoreCase = true) }
+            if (trimmed.isNotBlank() && !isDuplicate) {
+                repository.updateEtiquette(etiquette.copy(texte = trimmed))
+            }
         }
     }
 
-    fun updateSectionPosition(id: Long, x: Float, y: Float) {
+    fun updateEtiquettePosition(id: Long, x: Float, y: Float) {
         viewModelScope.launch {
-            repository.updateSectionPosition(id, x, y)
+            repository.updateEtiquettePosition(id, x, y)
         }
     }
 
-    fun updateSectionSize(id: Long, width: Float, height: Float) {
+    fun deleteEtiquette(id: Long) {
         viewModelScope.launch {
-            repository.updateSectionSize(id, width, height)
-        }
-    }
-
-    fun deleteSection(sectionId: Long) {
-        viewModelScope.launch {
-            repository.deleteSection(sectionId)
+            repository.deleteEtiquette(id)
         }
     }
 
@@ -153,67 +158,62 @@ class MainViewModel @JvmOverloads constructor(
         marque: String,
         description: String,
         imageUri: Uri?,
-        pieceId: Long
+        pieceId: Long,
+        posX: Float = 0f,
+        posY: Float = 0f
     ) {
         viewModelScope.launch {
             val localPath = imageUri?.let {
                 ImageUtils.saveImageToInternalStorage(getApplication(), it)
             } ?: ""
 
-            val normalizedMarque = BrandUtils.normalizeBrand(marque)
+            val normalizedBrand = BrandUtils.normalizeBrand(marque)
 
-            val chaussure = Chaussure(
-                nom = nom,
-                marque = normalizedMarque,
-                description = description,
-                photoPath = localPath,
-                idPiece = pieceId,
-                posX = 0f,
-                posY = 0f,
-                positionIndex = chaussures.value.size
+            repository.insertChaussure(
+                Chaussure(
+                    idPiece = pieceId,
+                    nom = nom.trim(),
+                    marque = normalizedBrand,
+                    description = description.trim(),
+                    photoPath = localPath,
+                    posX = posX,
+                    posY = posY
+                )
             )
-            repository.insertChaussure(chaussure)
         }
     }
 
     fun updateChaussure(
         chaussure: Chaussure,
-        newNom: String,
-        newMarque: String,
-        newDescription: String,
+        nom: String,
+        marque: String,
+        description: String,
         newImageUri: Uri?,
         newPieceId: Long
     ) {
         viewModelScope.launch {
-            val newPhotoPath = if (newImageUri != null) {
-                ImageUtils.saveImageToInternalStorage(getApplication(), newImageUri) ?: chaussure.photoPath
-            } else {
-                chaussure.photoPath
+            var photoPath = chaussure.photoPath
+            if (newImageUri != null) {
+                photoPath = ImageUtils.saveImageToInternalStorage(getApplication(), newImageUri) ?: ""
             }
 
-            val normalizedMarque = BrandUtils.normalizeBrand(newMarque)
+            val normalizedBrand = BrandUtils.normalizeBrand(marque)
 
-            val updated = chaussure.copy(
-                nom = newNom,
-                marque = normalizedMarque,
-                description = newDescription,
-                photoPath = newPhotoPath,
-                idPiece = newPieceId
+            repository.updateChaussure(
+                chaussure.copy(
+                    idPiece = newPieceId,
+                    nom = nom.trim(),
+                    marque = normalizedBrand,
+                    description = description.trim(),
+                    photoPath = photoPath
+                )
             )
-            repository.updateChaussure(updated)
-        }
-    }
-
-    fun updateShoePosition(id: Long, x: Float, y: Float, sectionId: Long?) {
-        viewModelScope.launch {
-            repository.updateChaussurePosition(id, x, y, sectionId)
         }
     }
 
     fun toggleFavorite(chaussure: Chaussure) {
         viewModelScope.launch {
-            val updated = chaussure.copy(isFavorite = !chaussure.isFavorite)
-            repository.updateChaussure(updated)
+            repository.updateChaussure(chaussure.copy(isFavorite = !chaussure.isFavorite))
         }
     }
 
@@ -223,15 +223,9 @@ class MainViewModel @JvmOverloads constructor(
         }
     }
 
-    fun updateSearchQuery(query: String) {
-        searchQuery.value = query
-    }
-
-    fun setSortOption(option: SortOption) {
-        sortOption.value = option
-    }
-
-    fun setSelectedBrandFilter(brand: String?) {
-        selectedBrandFilter.value = brand
+    fun updateShoePosition(id: Long, x: Float, y: Float, sectionId: Long?) {
+        viewModelScope.launch {
+            repository.updateChaussurePosition(id, x, y, sectionId)
+        }
     }
 }

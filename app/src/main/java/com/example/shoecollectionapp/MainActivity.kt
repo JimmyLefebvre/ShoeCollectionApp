@@ -26,17 +26,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.example.shoecollectionapp.data.Chaussure
+import com.example.shoecollectionapp.data.Etiquette
 import com.example.shoecollectionapp.data.Piece
-import com.example.shoecollectionapp.data.Section
 import com.example.shoecollectionapp.ui.theme.ShoeCollectionAppTheme
 import com.example.shoecollectionapp.ui.theme.ui.AddChaussureDialog
+import com.example.shoecollectionapp.ui.theme.ui.AddEtiquetteDialog
 import com.example.shoecollectionapp.ui.theme.ui.AddPieceDialog
-import com.example.shoecollectionapp.ui.theme.ui.AddSectionDialog
 import com.example.shoecollectionapp.ui.theme.ui.CollectionScreen
 import com.example.shoecollectionapp.ui.theme.ui.ConfirmDeleteDialog
 import com.example.shoecollectionapp.ui.theme.ui.EditChaussureDialog
+import com.example.shoecollectionapp.ui.theme.ui.EditEtiquetteDialog
 import com.example.shoecollectionapp.ui.theme.ui.EditPieceDialog
-import com.example.shoecollectionapp.ui.theme.ui.EditSectionDialog
 import com.example.shoecollectionapp.ui.theme.ui.HomeScreen
 import com.example.shoecollectionapp.ui.theme.ui.OptionsScreen
 import com.example.shoecollectionapp.ui.theme.ui.StatsScreen
@@ -67,25 +67,25 @@ fun MainScreen(viewModel: MainViewModel) {
     var selectedTab by remember { mutableIntStateOf(0) } // 0 = Collection, 1 = Stats, 2 = Options
 
     val pieces by viewModel.pieces.collectAsState()
-    val sections by viewModel.sections.collectAsState()
+    val etiquettes by viewModel.etiquettes.collectAsState()
     val chaussures by viewModel.chaussures.collectAsState()
     val allChaussures by viewModel.allChaussures.collectAsState()
     val selectedPieceId by viewModel.selectedPieceId.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
-    val sortOption by viewModel.sortOption.collectAsState()
     val selectedBrandFilter by viewModel.selectedBrandFilter.collectAsState()
-
-    var activeMovingSectionId by remember { mutableStateOf<Long?>(null) }
 
     val existingBrands = remember(allChaussures) {
         allChaussures.map { it.marque }.filter { it.isNotBlank() }.distinct()
     }
 
+    // Positions de création au centre de l'écran courant
+    var creationPosition by remember { mutableStateOf<Pair<Float, Float>?>(null) }
+
     // Gestion des dialogues
     var showAddPieceDialog by remember { mutableStateOf(false) }
-    var showAddSectionDialog by remember { mutableStateOf(false) }
+    var showAddEtiquetteDialog by remember { mutableStateOf(false) }
     var editingPiece by remember { mutableStateOf<Piece?>(null) }
-    var editingSection by remember { mutableStateOf<Section?>(null) }
+    var editingEtiquette by remember { mutableStateOf<Etiquette?>(null) }
 
     var showAddChaussureDialog by remember { mutableStateOf(false) }
     var editingChaussure by remember { mutableStateOf<Chaussure?>(null) }
@@ -102,33 +102,30 @@ fun MainScreen(viewModel: MainViewModel) {
         )
     }
 
-    // Dialogue : Ajouter une section
-    if (showAddSectionDialog && selectedPieceId != null) {
-        AddSectionDialog(
-            onDismiss = { showAddSectionDialog = false },
-            onConfirm = { nom ->
-                viewModel.addSection(selectedPieceId!!, nom)
-                showAddSectionDialog = false
+    // Dialogue : Ajouter une étiquette
+    if (showAddEtiquetteDialog && selectedPieceId != null) {
+        val pos = creationPosition ?: Pair(0f, 0f)
+        AddEtiquetteDialog(
+            onDismiss = { showAddEtiquetteDialog = false },
+            onConfirm = { texte ->
+                viewModel.addEtiquette(selectedPieceId!!, texte, pos.first, pos.second)
+                showAddEtiquetteDialog = false
             }
         )
     }
 
-    // Dialogue : Modifier / Supprimer une section
-    editingSection?.let { section ->
-        EditSectionDialog(
-            section = section,
-            onDismiss = { editingSection = null },
-            onConfirmSave = { newName ->
-                viewModel.updateSection(section, newName)
-                editingSection = null
+    // Dialogue : Modifier / Supprimer une étiquette
+    editingEtiquette?.let { etiquette ->
+        EditEtiquetteDialog(
+            etiquette = etiquette,
+            onDismiss = { editingEtiquette = null },
+            onConfirmSave = { newTexte ->
+                viewModel.updateEtiquette(etiquette, newTexte)
+                editingEtiquette = null
             },
-            onStartMoving = {
-                activeMovingSectionId = section.id
-                editingSection = null
-            },
-            onDeleteSection = {
-                viewModel.deleteSection(section.id)
-                editingSection = null
+            onDelete = {
+                viewModel.deleteEtiquette(etiquette.id)
+                editingEtiquette = null
             }
         )
     }
@@ -152,12 +149,13 @@ fun MainScreen(viewModel: MainViewModel) {
     // Dialogue : Ajouter une chaussure
     if (showAddChaussureDialog) {
         val targetPieceId = selectedPieceId ?: pieces.firstOrNull()?.id
+        val pos = creationPosition ?: Pair(0f, 0f)
         if (targetPieceId != null) {
             AddChaussureDialog(
                 existingBrands = existingBrands,
                 onDismiss = { showAddChaussureDialog = false },
                 onConfirm = { nom, marque, description, uri ->
-                    viewModel.addChaussure(nom, marque, description, uri, targetPieceId)
+                    viewModel.addChaussure(nom, marque, description, uri, targetPieceId, pos.first, pos.second)
                     showAddChaussureDialog = false
                 }
             )
@@ -234,29 +232,30 @@ fun MainScreen(viewModel: MainViewModel) {
                 when (selectedTab) {
                     0 -> CollectionScreen(
                         pieces = pieces,
-                        sections = sections,
+                        etiquettes = etiquettes,
                         chaussures = chaussures,
                         allChaussures = allChaussures,
                         selectedPieceId = selectedPieceId,
                         searchQuery = searchQuery,
-                        sortOption = sortOption,
                         selectedBrandFilter = selectedBrandFilter,
-                        activeMovingSectionId = activeMovingSectionId,
-                        onActiveMovingSectionIdChange = { activeMovingSectionId = it },
                         onSelectPiece = { pieceId -> viewModel.selectPiece(pieceId) },
                         onOpenAddPiece = { showAddPieceDialog = true },
                         onOpenEditPiece = { piece -> editingPiece = piece },
-                        onOpenAddSection = { showAddSectionDialog = true },
-                        onEditSection = { section -> editingSection = section },
-                        onOpenAddChaussure = { showAddChaussureDialog = true },
+                        onOpenAddEtiquette = { x, y ->
+                            creationPosition = Pair(x, y)
+                            showAddEtiquetteDialog = true
+                        },
+                        onEditEtiquette = { etiquette -> editingEtiquette = etiquette },
+                        onOpenAddChaussure = { x, y ->
+                            creationPosition = Pair(x, y)
+                            showAddChaussureDialog = true
+                        },
                         onOpenEditChaussure = { chaussure -> editingChaussure = chaussure },
                         onToggleFavorite = { chaussure -> viewModel.toggleFavorite(chaussure) },
                         onDeleteChaussure = { id -> deletingChaussureId = id },
                         onUpdatePosition = { id, x, y, sectionId -> viewModel.updateShoePosition(id, x, y, sectionId) },
-                        onUpdateSectionPosition = { id, x, y -> viewModel.updateSectionPosition(id, x, y) },
-                        onUpdateSectionSize = { id, w, h -> viewModel.updateSectionSize(id, w, h) },
+                        onUpdateEtiquettePosition = { id, x, y -> viewModel.updateEtiquettePosition(id, x, y) },
                         onUpdateSearchQuery = { query -> viewModel.updateSearchQuery(query) },
-                        onSelectSortOption = { option -> viewModel.setSortOption(option) },
                         onSelectBrandFilter = { brand -> viewModel.setSelectedBrandFilter(brand) }
                     )
 

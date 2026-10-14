@@ -26,7 +26,26 @@ interface AppDao {
     @Query("SELECT COUNT(*) FROM pieces")
     fun getTotalPiecesCount(): Flow<Int>
 
-    // --- SECTIONS ---
+    // --- ÉTIQUETTES FLOTTANTES ---
+    @Query("SELECT * FROM etiquettes WHERE idPiece = :pieceId")
+    fun getEtiquettesByPiece(pieceId: Long): Flow<List<Etiquette>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertEtiquette(etiquette: Etiquette): Long
+
+    @Update
+    suspend fun updateEtiquette(etiquette: Etiquette)
+
+    @Query("UPDATE etiquettes SET x = :x, y = :y WHERE id = :id")
+    suspend fun updateEtiquettePosition(id: Long, x: Float, y: Float)
+
+    @Query("DELETE FROM etiquettes WHERE id = :id")
+    suspend fun deleteEtiquette(id: Long)
+
+    @Query("DELETE FROM etiquettes WHERE idPiece = :pieceId")
+    suspend fun deleteEtiquettesByPiece(pieceId: Long)
+
+    // --- SECTIONS (Compatibilité) ---
     @Query("SELECT * FROM sections WHERE idPiece = :pieceId")
     fun getSectionsByPiece(pieceId: Long): Flow<List<Section>>
 
