@@ -130,7 +130,8 @@ fun CollectionScreen(
         }
     }
 
-    val availableBrands = allChaussures
+    // Filtrer les marques uniquement parmi les chaussures présentes dans la pièce active
+    val availableBrands = chaussures
         .map { it.marque.trim() }
         .filter { it.isNotBlank() }
         .distinct()
@@ -273,10 +274,11 @@ fun CollectionScreen(
                             translationY = panOffsetY
                         )
                 ) {
-                    // --- 1. BOÎTES DE CHAUSSURES (Architecture unifiée sans variables fermées obsolètes) ---
+                    // --- 1. BOÎTES DE CHAUSSURES ---
                     chaussures.forEach { shoe ->
-                        val cardPos = shoePositions[shoe.id] ?: Offset(shoe.posX, shoe.posY)
-                        var startPos by remember(shoe.id) { mutableStateOf(cardPos) }
+                        val currentPos = shoePositions[shoe.id] ?: Offset(shoe.posX, shoe.posY)
+                        var offsetX by remember(shoe.id) { mutableFloatStateOf(currentPos.x) }
+                        var offsetY by remember(shoe.id) { mutableFloatStateOf(currentPos.y) }
 
                         val matchesFilter = (searchQuery.isBlank() ||
                                 shoe.nom.contains(searchQuery, ignoreCase = true) ||
@@ -296,55 +298,29 @@ fun CollectionScreen(
 
                         Card(
                             modifier = Modifier
-                                .offset { IntOffset(cardPos.x.roundToInt(), cardPos.y.roundToInt()) }
+                                .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
                                 .size(width = boxWidthDp, height = boxHeightDp)
                                 .alpha(blockAlpha)
                                 .border(blockBorder, RoundedCornerShape(0.dp))
                                 .pointerInput(shoe.id) {
                                     detectDragGestures(
-                                        onDragStart = {
-                                            val current = shoePositions[shoe.id] ?: Offset(shoe.posX, shoe.posY)
-                                            startPos = current
-                                        },
                                         onDragEnd = {
-                                            val p = shoePositions[shoe.id] ?: startPos
                                             val maxAllowedX = totalGridWidthPx - boxWidthPx
                                             val maxAllowedY = totalGridHeightPx - boxHeightPx
+                                            val targetX = ((offsetX / boxWidthPx).roundToInt() * boxWidthPx).coerceIn(0f, maxAllowedX)
+                                            val targetY = ((offsetY / boxHeightPx).roundToInt() * boxHeightPx).coerceIn(0f, maxAllowedY)
 
-                                            val targetX = ((p.x / boxWidthPx).roundToInt() * boxWidthPx).coerceIn(0f, maxAllowedX)
-                                            val targetY = ((p.y / boxHeightPx).roundToInt() * boxHeightPx).coerceIn(0f, maxAllowedY)
-
-                                            val targetCol = (targetX / boxWidthPx).roundToInt()
-                                            val targetRow = (targetY / boxHeightPx).roundToInt()
-
-                                            // Recherche d'une boîte en conflit
-                                            val conflictingId = shoePositions.entries.find { (id, pos) ->
-                                                id != shoe.id &&
-                                                        (pos.x / boxWidthPx).roundToInt() == targetCol &&
-                                                        (pos.y / boxHeightPx).roundToInt() == targetRow
-                                            }?.key
-
-                                            if (conflictingId != null) {
-                                                // Échange SWAP parfait
-                                                shoePositions[shoe.id] = Offset(targetX, targetY)
-                                                shoePositions[conflictingId] = startPos
-
-                                                onUpdatePosition(shoe.id, targetX, targetY, shoe.idSection)
-                                                onUpdatePosition(conflictingId, startPos.x, startPos.y, null)
-                                            } else {
-                                                // Case libre
-                                                shoePositions[shoe.id] = Offset(targetX, targetY)
-                                                onUpdatePosition(shoe.id, targetX, targetY, shoe.idSection)
-                                            }
+                                            shoePositions[shoe.id] = Offset(targetX, targetY)
+                                            offsetX = targetX
+                                            offsetY = targetY
+                                            onUpdatePosition(shoe.id, targetX, targetY, shoe.idSection)
                                         }
                                     ) { change, dragAmount ->
                                         change.consume()
                                         val maxAllowedX = totalGridWidthPx - boxWidthPx
                                         val maxAllowedY = totalGridHeightPx - boxHeightPx
-                                        val p = shoePositions[shoe.id] ?: startPos
-                                        val newX = (p.x + dragAmount.x).coerceIn(0f, maxAllowedX)
-                                        val newY = (p.y + dragAmount.y).coerceIn(0f, maxAllowedY)
-                                        shoePositions[shoe.id] = Offset(newX, newY)
+                                        offsetX = (offsetX + dragAmount.x).coerceIn(0f, maxAllowedX)
+                                        offsetY = (offsetY + dragAmount.y).coerceIn(0f, maxAllowedY)
                                     }
                                 }
                                 .clickable { inspectedChaussure = shoe },
