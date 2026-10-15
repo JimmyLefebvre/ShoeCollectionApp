@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -59,6 +60,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -73,6 +75,7 @@ import com.example.shoecollectionapp.data.Chaussure
 import com.example.shoecollectionapp.data.Etiquette
 import com.example.shoecollectionapp.data.Piece
 import java.io.File
+import kotlin.math.atan2
 import kotlin.math.roundToInt
 
 @Composable
@@ -130,7 +133,8 @@ fun CollectionScreen(
         }
     }
 
-    val availableBrands = allChaussures
+    // Filtrer les marques uniquement parmi les chaussures présentes dans la pièce active
+    val availableBrands = chaussures
         .map { it.marque.trim() }
         .filter { it.isNotBlank() }
         .distinct()
@@ -273,10 +277,11 @@ fun CollectionScreen(
                             translationY = panOffsetY
                         )
                 ) {
-                    // --- 1. BOÎTES DE CHAUSSURES (Architecture unifiée sans variables fermées obsolètes) ---
+                    // --- 1. BOÎTES DE CHAUSSURES ---
                     chaussures.forEach { shoe ->
-                        val cardPos = shoePositions[shoe.id] ?: Offset(shoe.posX, shoe.posY)
-                        var startPos by remember(shoe.id) { mutableStateOf(cardPos) }
+                        val currentPos = shoePositions[shoe.id] ?: Offset(shoe.posX, shoe.posY)
+                        var offsetX by remember(shoe.id) { mutableFloatStateOf(currentPos.x) }
+                        var offsetY by remember(shoe.id) { mutableFloatStateOf(currentPos.y) }
 
                         val matchesFilter = (searchQuery.isBlank() ||
                                 shoe.nom.contains(searchQuery, ignoreCase = true) ||
@@ -296,55 +301,29 @@ fun CollectionScreen(
 
                         Card(
                             modifier = Modifier
-                                .offset { IntOffset(cardPos.x.roundToInt(), cardPos.y.roundToInt()) }
+                                .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
                                 .size(width = boxWidthDp, height = boxHeightDp)
                                 .alpha(blockAlpha)
                                 .border(blockBorder, RoundedCornerShape(0.dp))
                                 .pointerInput(shoe.id) {
                                     detectDragGestures(
-                                        onDragStart = {
-                                            val current = shoePositions[shoe.id] ?: Offset(shoe.posX, shoe.posY)
-                                            startPos = current
-                                        },
                                         onDragEnd = {
-                                            val p = shoePositions[shoe.id] ?: startPos
                                             val maxAllowedX = totalGridWidthPx - boxWidthPx
                                             val maxAllowedY = totalGridHeightPx - boxHeightPx
+                                            val targetX = ((offsetX / boxWidthPx).roundToInt() * boxWidthPx).coerceIn(0f, maxAllowedX)
+                                            val targetY = ((offsetY / boxHeightPx).roundToInt() * boxHeightPx).coerceIn(0f, maxAllowedY)
 
-                                            val targetX = ((p.x / boxWidthPx).roundToInt() * boxWidthPx).coerceIn(0f, maxAllowedX)
-                                            val targetY = ((p.y / boxHeightPx).roundToInt() * boxHeightPx).coerceIn(0f, maxAllowedY)
-
-                                            val targetCol = (targetX / boxWidthPx).roundToInt()
-                                            val targetRow = (targetY / boxHeightPx).roundToInt()
-
-                                            // Recherche d'une boîte en conflit
-                                            val conflictingId = shoePositions.entries.find { (id, pos) ->
-                                                id != shoe.id &&
-                                                        (pos.x / boxWidthPx).roundToInt() == targetCol &&
-                                                        (pos.y / boxHeightPx).roundToInt() == targetRow
-                                            }?.key
-
-                                            if (conflictingId != null) {
-                                                // Échange SWAP parfait
-                                                shoePositions[shoe.id] = Offset(targetX, targetY)
-                                                shoePositions[conflictingId] = startPos
-
-                                                onUpdatePosition(shoe.id, targetX, targetY, shoe.idSection)
-                                                onUpdatePosition(conflictingId, startPos.x, startPos.y, null)
-                                            } else {
-                                                // Case libre
-                                                shoePositions[shoe.id] = Offset(targetX, targetY)
-                                                onUpdatePosition(shoe.id, targetX, targetY, shoe.idSection)
-                                            }
+                                            shoePositions[shoe.id] = Offset(targetX, targetY)
+                                            offsetX = targetX
+                                            offsetY = targetY
+                                            onUpdatePosition(shoe.id, targetX, targetY, shoe.idSection)
                                         }
                                     ) { change, dragAmount ->
                                         change.consume()
                                         val maxAllowedX = totalGridWidthPx - boxWidthPx
                                         val maxAllowedY = totalGridHeightPx - boxHeightPx
-                                        val p = shoePositions[shoe.id] ?: startPos
-                                        val newX = (p.x + dragAmount.x).coerceIn(0f, maxAllowedX)
-                                        val newY = (p.y + dragAmount.y).coerceIn(0f, maxAllowedY)
-                                        shoePositions[shoe.id] = Offset(newX, newY)
+                                        offsetX = (offsetX + dragAmount.x).coerceIn(0f, maxAllowedX)
+                                        offsetY = (offsetY + dragAmount.y).coerceIn(0f, maxAllowedY)
                                     }
                                 }
                                 .clickable { inspectedChaussure = shoe },
@@ -437,6 +416,81 @@ fun CollectionScreen(
                                     style = MaterialTheme.typography.labelLarge,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // --- 3. CURSEURS/INDICATEURS DE BORD POUR ÉTIQUETTES HORS ÉCRAN ---
+                val viewMinX = -panOffsetX
+                val viewMaxX = -panOffsetX + screenWidthPx
+                val viewMinY = -panOffsetY + with(density) { 120.dp.toPx() } // sous le header
+                val viewMaxY = -panOffsetY + screenHeightPx - with(density) { 60.dp.toPx() } // au-dessus du bottom navigation
+
+                val viewCenterX = -panOffsetX + (screenWidthPx / 2f)
+                val viewCenterY = -panOffsetY + (screenHeightPx / 2f)
+
+                val minEdgeX = with(density) { 16.dp.toPx() }
+                val maxEdgeX = screenWidthPx - with(density) { 100.dp.toPx() }
+                val minEdgeY = with(density) { 130.dp.toPx() }
+                val maxEdgeY = screenHeightPx - with(density) { 70.dp.toPx() }
+
+                etiquettes.forEach { tag ->
+                    val tagWidthPx = (tag.texte.length * 11f + 60f).coerceIn(120f, 400f)
+                    val tagHeightPx = 36f
+
+                    val tagCenterX = tag.x + (tagWidthPx / 2f)
+                    val tagCenterY = tag.y + (tagHeightPx / 2f)
+
+                    val isOffScreen = tagCenterX < viewMinX || tagCenterX > viewMaxX ||
+                            tagCenterY < viewMinY || tagCenterY > viewMaxY
+
+                    if (isOffScreen) {
+                        val dx = tagCenterX - viewCenterX
+                        val dy = tagCenterY - viewCenterY
+
+                        val scaleX = if (dx > 0) (maxEdgeX - (screenWidthPx / 2f)) / dx else ((screenWidthPx / 2f) - minEdgeX) / -dx
+                        val scaleY = if (dy > 0) (maxEdgeY - (screenHeightPx / 2f)) / dy else ((screenHeightPx / 2f) - minEdgeY) / -dy
+                        val scale = minOf(scaleX, scaleY).coerceAtLeast(0f)
+
+                        val edgeX = (screenWidthPx / 2f) + dx * scale
+                        val edgeY = (screenHeightPx / 2f) + dy * scale
+
+                        val angleDeg = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
+
+                        Surface(
+                            modifier = Modifier
+                                .offset { IntOffset(edgeX.roundToInt(), edgeY.roundToInt()) }
+                                .clickable {
+                                    val targetPanX = -(tag.x - (screenWidthPx / 2f) + (tagWidthPx / 2f))
+                                    val targetPanY = -(tag.y - (screenHeightPx / 2f) + (tagHeightPx / 2f))
+                                    panOffsetX = targetPanX.coerceIn(-totalGridWidthPx + screenWidthPx, 0f)
+                                    panOffsetY = targetPanY.coerceIn(-totalGridHeightPx + screenHeightPx, 0f)
+                                },
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            shadowElevation = 6.dp,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Navigation,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier
+                                        .size(12.dp)
+                                        .rotate(angleDeg + 90f)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = tag.texte.take(8) + if (tag.texte.length > 8) "…" else "",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
                                 )
                             }
                         }
@@ -594,7 +648,7 @@ fun CollectionScreen(
                                                     },
                                                     onClick = {
                                                         isEtiquetteDropdownExpanded = false
-                                                        val tagWidthPx = 140f
+                                                        val tagWidthPx = (tag.texte.length * 11f + 60f).coerceIn(120f, 600f)
                                                         val tagHeightPx = 45f
                                                         val targetPanX = -(tag.x - (screenWidthPx / 2f) + (tagWidthPx / 2f))
                                                         val targetPanY = -(tag.y - (screenHeightPx / 2f) + (tagHeightPx / 2f))
