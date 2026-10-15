@@ -48,8 +48,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -117,6 +119,16 @@ fun CollectionScreen(
     val maxRows = 25
     val totalGridWidthPx = boxWidthPx * maxCols
     val totalGridHeightPx = boxHeightPx * maxRows
+
+    // Source de vérité unique pour les positions locales des chaussures
+    val shoePositions = remember(selectedPieceId) { mutableStateMapOf<Long, Offset>() }
+    LaunchedEffect(chaussures, selectedPieceId) {
+        chaussures.forEach { shoe ->
+            if (!shoePositions.containsKey(shoe.id)) {
+                shoePositions[shoe.id] = Offset(shoe.posX, shoe.posY)
+            }
+        }
+    }
 
     val availableBrands = allChaussures
         .map { it.marque.trim() }
@@ -261,10 +273,10 @@ fun CollectionScreen(
                             translationY = panOffsetY
                         )
                 ) {
-                    // --- 1. BOÎTES DE CHAUSSURES (Anti-chevauchement) ---
+                    // --- 1. BOÎTES DE CHAUSSURES (Architecture unifiée sans variables fermées obsolètes) ---
                     chaussures.forEach { shoe ->
-                        var offsetX by remember(shoe.id) { mutableStateOf(shoe.posX) }
-                        var offsetY by remember(shoe.id) { mutableStateOf(shoe.posY) }
+                        val cardPos = shoePositions[shoe.id] ?: Offset(shoe.posX, shoe.posY)
+                        var startPos by remember(shoe.id) { mutableStateOf(cardPos) }
 
                         val matchesFilter = (searchQuery.isBlank() ||
                                 shoe.nom.contains(searchQuery, ignoreCase = true) ||
@@ -284,40 +296,55 @@ fun CollectionScreen(
 
                         Card(
                             modifier = Modifier
-                                .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+                                .offset { IntOffset(cardPos.x.roundToInt(), cardPos.y.roundToInt()) }
                                 .size(width = boxWidthDp, height = boxHeightDp)
                                 .alpha(blockAlpha)
                                 .border(blockBorder, RoundedCornerShape(0.dp))
                                 .pointerInput(shoe.id) {
                                     detectDragGestures(
+                                        onDragStart = {
+                                            val current = shoePositions[shoe.id] ?: Offset(shoe.posX, shoe.posY)
+                                            startPos = current
+                                        },
                                         onDragEnd = {
+                                            val p = shoePositions[shoe.id] ?: startPos
                                             val maxAllowedX = totalGridWidthPx - boxWidthPx
                                             val maxAllowedY = totalGridHeightPx - boxHeightPx
-                                            val targetX = ((offsetX / boxWidthPx).roundToInt() * boxWidthPx).coerceIn(0f, maxAllowedX)
-                                            val targetY = ((offsetY / boxHeightPx).roundToInt() * boxHeightPx).coerceIn(0f, maxAllowedY)
 
-                                            // Anti-chevauchement
-                                            val isOccupied = chaussures.any { other ->
-                                                other.id != shoe.id &&
-                                                        other.posX.roundToInt() == targetX.roundToInt() &&
-                                                        other.posY.roundToInt() == targetY.roundToInt()
-                                            }
+                                            val targetX = ((p.x / boxWidthPx).roundToInt() * boxWidthPx).coerceIn(0f, maxAllowedX)
+                                            val targetY = ((p.y / boxHeightPx).roundToInt() * boxHeightPx).coerceIn(0f, maxAllowedY)
 
-                                            if (!isOccupied) {
-                                                offsetX = targetX
-                                                offsetY = targetY
+                                            val targetCol = (targetX / boxWidthPx).roundToInt()
+                                            val targetRow = (targetY / boxHeightPx).roundToInt()
+
+                                            // Recherche d'une boîte en conflit
+                                            val conflictingId = shoePositions.entries.find { (id, pos) ->
+                                                id != shoe.id &&
+                                                        (pos.x / boxWidthPx).roundToInt() == targetCol &&
+                                                        (pos.y / boxHeightPx).roundToInt() == targetRow
+                                            }?.key
+
+                                            if (conflictingId != null) {
+                                                // Échange SWAP parfait
+                                                shoePositions[shoe.id] = Offset(targetX, targetY)
+                                                shoePositions[conflictingId] = startPos
+
                                                 onUpdatePosition(shoe.id, targetX, targetY, shoe.idSection)
+                                                onUpdatePosition(conflictingId, startPos.x, startPos.y, null)
                                             } else {
-                                                offsetX = shoe.posX
-                                                offsetY = shoe.posY
+                                                // Case libre
+                                                shoePositions[shoe.id] = Offset(targetX, targetY)
+                                                onUpdatePosition(shoe.id, targetX, targetY, shoe.idSection)
                                             }
                                         }
                                     ) { change, dragAmount ->
                                         change.consume()
                                         val maxAllowedX = totalGridWidthPx - boxWidthPx
                                         val maxAllowedY = totalGridHeightPx - boxHeightPx
-                                        offsetX = (offsetX + dragAmount.x).coerceIn(0f, maxAllowedX)
-                                        offsetY = (offsetY + dragAmount.y).coerceIn(0f, maxAllowedY)
+                                        val p = shoePositions[shoe.id] ?: startPos
+                                        val newX = (p.x + dragAmount.x).coerceIn(0f, maxAllowedX)
+                                        val newY = (p.y + dragAmount.y).coerceIn(0f, maxAllowedY)
+                                        shoePositions[shoe.id] = Offset(newX, newY)
                                     }
                                 }
                                 .clickable { inspectedChaussure = shoe },
@@ -526,7 +553,7 @@ fun CollectionScreen(
                         horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // --- LISTE DÉROULANTE ALLER À L'ÉTIQUETTE (CENTRAGE PARFAIT) ---
+                        // --- LISTE DÉROULANTE ALLER À L'ÉTIQUETTE ---
                         if (etiquettes.isNotEmpty()) {
                             Box {
                                 OutlinedButton(
@@ -567,7 +594,6 @@ fun CollectionScreen(
                                                     },
                                                     onClick = {
                                                         isEtiquetteDropdownExpanded = false
-                                                        // Centrage parfait de la caméra sur l'étiquette sélectionnée
                                                         val tagWidthPx = 140f
                                                         val tagHeightPx = 45f
                                                         val targetPanX = -(tag.x - (screenWidthPx / 2f) + (tagWidthPx / 2f))
