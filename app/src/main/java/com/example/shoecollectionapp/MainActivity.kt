@@ -37,7 +37,6 @@ import com.example.shoecollectionapp.ui.theme.ui.ConfirmDeleteDialog
 import com.example.shoecollectionapp.ui.theme.ui.EditChaussureDialog
 import com.example.shoecollectionapp.ui.theme.ui.EditEtiquetteDialog
 import com.example.shoecollectionapp.ui.theme.ui.EditPieceDialog
-import com.example.shoecollectionapp.ui.theme.ui.HomeScreen
 import com.example.shoecollectionapp.ui.theme.ui.OptionsScreen
 import com.example.shoecollectionapp.ui.theme.ui.StatsScreen
 import com.example.shoecollectionapp.viewmodel.MainViewModel
@@ -63,7 +62,6 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainScreen(viewModel: MainViewModel) {
-    var showWelcome by remember { mutableStateOf(true) }
     var selectedTab by remember { mutableIntStateOf(0) } // 0 = Collection, 1 = Stats, 2 = Options
 
     val pieces by viewModel.pieces.collectAsState()
@@ -195,80 +193,74 @@ fun MainScreen(viewModel: MainViewModel) {
         )
     }
 
-    if (showWelcome) {
-        HomeScreen(
-            onLancer = { showWelcome = false }
-        )
-    } else {
-        Scaffold(
-            bottomBar = {
-                NavigationBar {
-                    NavigationBarItem(
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        icon = { Icon(imageVector = Icons.Default.MeetingRoom, contentDescription = "Collection") },
-                        label = { Text("Collection") }
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        icon = { Icon(imageVector = Icons.Default.BarChart, contentDescription = "Statistiques") },
-                        label = { Text("Stats") }
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 2,
-                        onClick = { selectedTab = 2 },
-                        icon = { Icon(imageVector = Icons.Default.Settings, contentDescription = "Options") },
-                        label = { Text("Options") }
-                    )
-                }
+    Scaffold(
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    icon = { Icon(imageVector = Icons.Default.MeetingRoom, contentDescription = "Collection") },
+                    label = { Text("Collection") }
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    icon = { Icon(imageVector = Icons.Default.BarChart, contentDescription = "Statistiques") },
+                    label = { Text("Stats") }
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    icon = { Icon(imageVector = Icons.Default.Settings, contentDescription = "Options") },
+                    label = { Text("Options") }
+                )
             }
-        ) { paddingValues ->
-            Surface(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
-                when (selectedTab) {
-                    0 -> CollectionScreen(
-                        pieces = pieces,
-                        etiquettes = etiquettes,
-                        chaussures = chaussures,
-                        allChaussures = allChaussures,
-                        selectedPieceId = selectedPieceId,
-                        searchQuery = searchQuery,
-                        selectedBrandFilter = selectedBrandFilter,
-                        onSelectPiece = { pieceId -> viewModel.selectPiece(pieceId) },
-                        onOpenAddPiece = { showAddPieceDialog = true },
-                        onOpenEditPiece = { piece -> editingPiece = piece },
-                        onOpenAddEtiquette = { x, y ->
-                            creationPosition = Pair(x, y)
-                            showAddEtiquetteDialog = true
-                        },
-                        onEditEtiquette = { etiquette -> editingEtiquette = etiquette },
-                        onOpenAddChaussure = { x, y ->
-                            creationPosition = Pair(x, y)
-                            showAddChaussureDialog = true
-                        },
-                        onOpenEditChaussure = { chaussure -> editingChaussure = chaussure },
-                        onToggleFavorite = { chaussure -> viewModel.toggleFavorite(chaussure) },
-                        onDeleteChaussure = { id -> deletingChaussureId = id },
-                        onUpdatePosition = { id, x, y, sectionId -> viewModel.updateShoePosition(id, x, y, sectionId) },
-                        onUpdateEtiquettePosition = { id, x, y -> viewModel.updateEtiquettePosition(id, x, y) },
-                        onUpdateSearchQuery = { query -> viewModel.updateSearchQuery(query) },
-                        onSelectBrandFilter = { brand -> viewModel.setSelectedBrandFilter(brand) }
-                    )
+        }
+    ) { paddingValues ->
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            when (selectedTab) {
+                0 -> CollectionScreen(
+                    pieces = pieces,
+                    etiquettes = etiquettes,
+                    chaussures = chaussures,
+                    allChaussures = allChaussures,
+                    selectedPieceId = selectedPieceId,
+                    searchQuery = searchQuery,
+                    selectedBrandFilter = selectedBrandFilter,
+                    onSelectPiece = { pieceId -> viewModel.selectPiece(pieceId) },
+                    onOpenAddPiece = { showAddPieceDialog = true },
+                    onOpenEditPiece = { piece -> editingPiece = piece },
+                    onOpenAddEtiquette = { x, y ->
+                        creationPosition = Pair(x, y)
+                        showAddEtiquetteDialog = true
+                    },
+                    onEditEtiquette = { etiquette -> editingEtiquette = etiquette },
+                    onOpenAddChaussure = { x, y ->
+                        creationPosition = Pair(x, y)
+                        showAddChaussureDialog = true
+                    },
+                    onOpenEditChaussure = { chaussure -> editingChaussure = chaussure },
+                    onToggleFavorite = { chaussure -> viewModel.toggleFavorite(chaussure) },
+                    onDeleteChaussure = { id -> deletingChaussureId = id },
+                    onUpdatePosition = { id, x, y, sectionId -> viewModel.updateShoePosition(id, x, y, sectionId) },
+                    onUpdateEtiquettePosition = { id, x, y -> viewModel.updateEtiquettePosition(id, x, y) },
+                    onUpdateSearchQuery = { query -> viewModel.updateSearchQuery(query) },
+                    onSelectBrandFilter = { brand -> viewModel.setSelectedBrandFilter(brand) }
+                )
 
-                    1 -> StatsScreen(
-                        pieces = pieces,
-                        allChaussures = allChaussures
-                    )
+                1 -> StatsScreen(
+                    pieces = pieces,
+                    allChaussures = allChaussures
+                )
 
-                    2 -> OptionsScreen(
-                        pieces = pieces,
-                        chaussures = allChaussures
-                    )
-                }
+                2 -> OptionsScreen(
+                    pieces = pieces,
+                    chaussures = allChaussures
+                )
             }
         }
     }

@@ -54,6 +54,9 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
+
+    implementation(libs.androidx.core.splashscreen)
+
     val roomVersion = "2.8.5"
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
