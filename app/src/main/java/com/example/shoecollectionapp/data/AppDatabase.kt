@@ -5,7 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [Piece::class, Section::class, Chaussure::class, Etiquette::class], version = 6, exportSchema = false)
+@Database(entities = [Piece::class, Section::class, Chaussure::class, Etiquette::class], version = 7, exportSchema = true)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun appDao(): AppDao
@@ -21,7 +21,10 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "shoe_collection_db"
                 )
-                    .fallbackToDestructiveMigration(dropAllTables = true)
+                    .addMigrations(Migration6To7(context))
+                    // Anciennes versions de dev sans chemin de migration : seules celles-ci
+                    // peuvent encore perdre leurs données.
+                    .fallbackToDestructiveMigrationFrom(true, 1, 2, 3, 4, 5)
                     .build()
                 INSTANCE = instance
                 instance

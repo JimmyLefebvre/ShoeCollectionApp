@@ -95,6 +95,12 @@ interface AppDao {
     @Query("SELECT COUNT(*) FROM chaussures")
     fun getTotalChaussuresCount(): Flow<Int>
 
+    @Query("SELECT * FROM chaussures WHERE id = :id")
+    suspend fun getChaussureById(id: Long): Chaussure?
+
+    @Query("SELECT * FROM chaussures WHERE idPiece = :pieceId")
+    suspend fun getChaussuresSnapshot(pieceId: Long): List<Chaussure>
+
     @Query("SELECT * FROM chaussures")
     fun getAllChaussures(): Flow<List<Chaussure>>
 
@@ -104,8 +110,8 @@ interface AppDao {
     @Update
     suspend fun updateChaussure(chaussure: Chaussure)
 
-    @Query("UPDATE chaussures SET posX = :x, posY = :y, idSection = :sectionId WHERE id = :id")
-    suspend fun updateChaussurePosition(id: Long, x: Float, y: Float, sectionId: Long?)
+    @Query("UPDATE chaussures SET gridCol = :col, gridRow = :row, idSection = :sectionId WHERE id = :id")
+    suspend fun updateChaussurePosition(id: Long, col: Int, row: Int, sectionId: Long?)
 
     @Query("DELETE FROM chaussures WHERE id = :chaussureId")
     suspend fun deleteChaussure(chaussureId: Long)

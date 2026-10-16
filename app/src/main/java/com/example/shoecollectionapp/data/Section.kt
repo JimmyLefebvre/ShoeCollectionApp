@@ -2,6 +2,7 @@ package com.example.shoecollectionapp.data
 
 import androidx.room.Entity
 import androidx.room.ForeignKey
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(
@@ -13,7 +14,8 @@ import androidx.room.PrimaryKey
             childColumns = ["idPiece"],
             onDelete = ForeignKey.CASCADE
         )
-    ]
+    ],
+    indices = [Index(value = ["idPiece"])]
 )
 data class Section(
     @PrimaryKey(autoGenerate = true)

@@ -65,12 +65,16 @@ class CollectionRepositoryImpl(private val dao: AppDao) : CollectionRepository {
 
     override fun getTotalChaussuresCount(): Flow<Int> = dao.getTotalChaussuresCount()
 
+    override suspend fun getChaussureById(id: Long): Chaussure? = dao.getChaussureById(id)
+
+    override suspend fun getChaussuresSnapshot(pieceId: Long): List<Chaussure> = dao.getChaussuresSnapshot(pieceId)
+
     override suspend fun insertChaussure(chaussure: Chaussure) = dao.insertChaussure(chaussure)
 
     override suspend fun updateChaussure(chaussure: Chaussure) = dao.updateChaussure(chaussure)
 
-    override suspend fun updateChaussurePosition(id: Long, x: Float, y: Float, sectionId: Long?) =
-        dao.updateChaussurePosition(id, x, y, sectionId)
+    override suspend fun updateChaussurePosition(id: Long, col: Int, row: Int, sectionId: Long?) =
+        dao.updateChaussurePosition(id, col, row, sectionId)
 
     override suspend fun deleteChaussure(chaussureId: Long) = dao.deleteChaussure(chaussureId)
 }

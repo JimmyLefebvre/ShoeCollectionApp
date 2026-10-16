@@ -35,8 +35,10 @@ interface CollectionRepository {
     fun getAllChaussures(): Flow<List<Chaussure>>
     fun getRecentChaussures(limit: Int = 5): Flow<List<Chaussure>>
     fun getTotalChaussuresCount(): Flow<Int>
+    suspend fun getChaussureById(id: Long): Chaussure?
+    suspend fun getChaussuresSnapshot(pieceId: Long): List<Chaussure>
     suspend fun insertChaussure(chaussure: Chaussure)
     suspend fun updateChaussure(chaussure: Chaussure)
-    suspend fun updateChaussurePosition(id: Long, x: Float, y: Float, sectionId: Long?)
+    suspend fun updateChaussurePosition(id: Long, col: Int, row: Int, sectionId: Long?)
     suspend fun deleteChaussure(chaussureId: Long)
 }
