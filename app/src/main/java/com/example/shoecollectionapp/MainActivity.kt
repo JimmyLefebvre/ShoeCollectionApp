@@ -1,6 +1,7 @@
 package com.example.shoecollectionapp
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -18,6 +19,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -25,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import com.example.shoecollectionapp.data.Chaussure
 import com.example.shoecollectionapp.data.Etiquette
 import com.example.shoecollectionapp.data.Piece
@@ -64,6 +67,13 @@ class MainActivity : ComponentActivity() {
 fun MainScreen(viewModel: MainViewModel) {
     var selectedTab by remember { mutableIntStateOf(0) } // 0 = Collection, 1 = Stats, 2 = Options
 
+    val context = LocalContext.current
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
+    }
+
     val pieces by viewModel.pieces.collectAsState()
     val etiquettes by viewModel.etiquettes.collectAsState()
     val chaussures by viewModel.chaussures.collectAsState()
@@ -77,7 +87,9 @@ fun MainScreen(viewModel: MainViewModel) {
     }
 
     // Positions de création au centre de l'écran courant
+    // Étiquette : position en dp. Boîte : case (colonne, rangée).
     var creationPosition by remember { mutableStateOf<Pair<Float, Float>?>(null) }
+    var creationCell by remember { mutableStateOf<Pair<Int, Int>?>(null) }
 
     // Gestion des dialogues
     var showAddPieceDialog by remember { mutableStateOf(false) }
@@ -147,13 +159,13 @@ fun MainScreen(viewModel: MainViewModel) {
     // Dialogue : Ajouter une chaussure
     if (showAddChaussureDialog) {
         val targetPieceId = selectedPieceId ?: pieces.firstOrNull()?.id
-        val pos = creationPosition ?: Pair(0f, 0f)
+        val cell = creationCell ?: Pair(0, 0)
         if (targetPieceId != null) {
             AddChaussureDialog(
                 existingBrands = existingBrands,
                 onDismiss = { showAddChaussureDialog = false },
                 onConfirm = { nom, marque, description, uri ->
-                    viewModel.addChaussure(nom, marque, description, uri, targetPieceId, pos.first, pos.second)
+                    viewModel.addChaussure(nom, marque, description, uri, targetPieceId, cell.first, cell.second)
                     showAddChaussureDialog = false
                 }
             )
@@ -239,8 +251,8 @@ fun MainScreen(viewModel: MainViewModel) {
                         showAddEtiquetteDialog = true
                     },
                     onEditEtiquette = { etiquette -> editingEtiquette = etiquette },
-                    onOpenAddChaussure = { x, y ->
-                        creationPosition = Pair(x, y)
+                    onOpenAddChaussure = { col, row ->
+                        creationCell = Pair(col, row)
                         showAddChaussureDialog = true
                     },
                     onOpenEditChaussure = { chaussure -> editingChaussure = chaussure },

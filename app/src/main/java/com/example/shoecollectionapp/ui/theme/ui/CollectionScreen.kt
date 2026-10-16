@@ -74,6 +74,7 @@ import coil.compose.AsyncImage
 import com.example.shoecollectionapp.data.Chaussure
 import com.example.shoecollectionapp.data.Etiquette
 import com.example.shoecollectionapp.data.Piece
+import com.example.shoecollectionapp.utils.GridUtils
 import java.io.File
 import kotlin.math.atan2
 import kotlin.math.roundToInt
@@ -90,17 +91,20 @@ fun CollectionScreen(
     onSelectPiece: (Long) -> Unit,
     onOpenAddPiece: () -> Unit,
     onOpenEditPiece: (Piece) -> Unit,
-    onOpenAddEtiquette: (centerX: Float, centerY: Float) -> Unit,
+    onOpenAddEtiquette: (xDp: Float, yDp: Float) -> Unit,
     onEditEtiquette: (Etiquette) -> Unit,
-    onOpenAddChaussure: (centerX: Float, centerY: Float) -> Unit,
+    onOpenAddChaussure: (col: Int, row: Int) -> Unit,
     onOpenEditChaussure: (Chaussure) -> Unit,
     onToggleFavorite: (Chaussure) -> Unit,
     onDeleteChaussure: (Long) -> Unit,
-    onUpdatePosition: (Long, Float, Float, Long?) -> Unit,
+    onUpdatePosition: (Long, Int, Int, Long?) -> Unit,
     onUpdateEtiquettePosition: (Long, Float, Float) -> Unit,
     onUpdateSearchQuery: (String) -> Unit,
     onSelectBrandFilter: (String?) -> Unit
 ) {
+    // ID de la boîte actuellement en cours de glissement
+    var draggingShoeId by remember { mutableStateOf<Long?>(null) }
+
     var inspectedChaussure by remember { mutableStateOf<Chaussure?>(null) }
     var isHeaderExpanded by remember { mutableStateOf(true) }
     var isEtiquetteDropdownExpanded by remember { mutableStateOf(false) }
@@ -110,28 +114,33 @@ fun CollectionScreen(
     var panOffsetY by remember { mutableFloatStateOf(0f) }
 
     // Dimensions d'un bloc de la grille : 110dp de largeur x 70dp de hauteur
-    val boxWidthDp = 110.dp
-    val boxHeightDp = 70.dp
+    val boxWidthDp = GridUtils.CELL_W_DP.dp
+    val boxHeightDp = GridUtils.CELL_H_DP.dp
 
     val density = LocalDensity.current
+    val dpToPx = density.density
     val boxWidthPx = with(density) { boxWidthDp.toPx() }
     val boxHeightPx = with(density) { boxHeightDp.toPx() }
 
     // Grille totale 25 x 25
-    val maxCols = 25
-    val maxRows = 25
+    val maxCols = GridUtils.COLS
+    val maxRows = GridUtils.ROWS
     val totalGridWidthPx = boxWidthPx * maxCols
     val totalGridHeightPx = boxHeightPx * maxRows
 
-    // Source de vérité unique pour les positions locales des chaussures
-    val shoePositions = remember(selectedPieceId) { mutableStateMapOf<Long, Offset>() }
+    // Source de vérité synchrone en mémoire pour la grille (col, row) de chaque chaussure
+    val gridPositions = remember(selectedPieceId) { mutableStateMapOf<Long, Pair<Int, Int>>() }
     LaunchedEffect(chaussures, selectedPieceId) {
         chaussures.forEach { shoe ->
-            if (!shoePositions.containsKey(shoe.id)) {
-                shoePositions[shoe.id] = Offset(shoe.posX, shoe.posY)
+            if (!gridPositions.containsKey(shoe.id)) {
+                gridPositions[shoe.id] = Pair(shoe.gridCol, shoe.gridRow)
             }
         }
     }
+
+    // Marges de clamp des étiquettes
+    val tagMarginXPx = with(density) { 100.dp.toPx() }
+    val tagMarginYPx = with(density) { 50.dp.toPx() }
 
     // Filtrer les marques uniquement parmi les chaussures présentes dans la pièce active
     val availableBrands = chaussures
@@ -220,13 +229,13 @@ fun CollectionScreen(
         val screenWidthPx = with(density) { maxWidth.toPx() }
         val screenHeightPx = with(density) { maxHeight.toPx() }
 
-        // Calcul des coordonnées du centre de la vue courante
-        fun calculateViewportCenter(): Pair<Float, Float> {
+        // Case située au centre de la vue courante
+        fun calculateViewportCenterCell(): Pair<Int, Int> {
             val viewCenterX = -panOffsetX + (screenWidthPx / 2f) - (boxWidthPx / 2f)
             val viewCenterY = -panOffsetY + (screenHeightPx / 2f) - (boxHeightPx / 2f)
-            val snappedX = ((viewCenterX / boxWidthPx).roundToInt() * boxWidthPx).coerceIn(0f, totalGridWidthPx - boxWidthPx)
-            val snappedY = ((viewCenterY / boxHeightPx).roundToInt() * boxHeightPx).coerceIn(0f, totalGridHeightPx - boxHeightPx)
-            return Pair(snappedX, snappedY)
+            val col = (viewCenterX / boxWidthPx).roundToInt().coerceIn(0, maxCols - 1)
+            val row = (viewCenterY / boxHeightPx).roundToInt().coerceIn(0, maxRows - 1)
+            return Pair(col, row)
         }
 
         // --- ESPACE 2D BORNÉ (25x25) ---
@@ -253,18 +262,16 @@ fun CollectionScreen(
                     )
 
                 Canvas(modifier = canvasModifier) {
-                    val cw = boxWidthPx
-                    val ch = boxHeightPx
 
                     var x = 0f
                     while (x <= totalGridWidthPx) {
                         drawLine(gridColor, Offset(x, 0f), Offset(x, totalGridHeightPx), strokeWidth = 1.5f)
-                        x += cw
+                        x += boxWidthPx
                     }
                     var y = 0f
                     while (y <= totalGridHeightPx) {
                         drawLine(gridColor, Offset(0f, y), Offset(totalGridWidthPx, y), strokeWidth = 1.5f)
-                        y += ch
+                        y += boxHeightPx
                     }
                 }
 
@@ -277,11 +284,21 @@ fun CollectionScreen(
                             translationY = panOffsetY
                         )
                 ) {
-                    // --- 1. BOÎTES DE CHAUSSURES ---
+                    // --- 1. BOÎTES DE CHAUSSURES (SWAP parfait et synchrone) ---
                     chaussures.forEach { shoe ->
-                        val currentPos = shoePositions[shoe.id] ?: Offset(shoe.posX, shoe.posY)
-                        var offsetX by remember(shoe.id) { mutableFloatStateOf(currentPos.x) }
-                        var offsetY by remember(shoe.id) { mutableFloatStateOf(currentPos.y) }
+                        val currentCell = gridPositions[shoe.id] ?: Pair(shoe.gridCol, shoe.gridRow)
+                        var offsetX by remember(shoe.id) { mutableFloatStateOf(currentCell.first * boxWidthPx) }
+                        var offsetY by remember(shoe.id) { mutableFloatStateOf(currentCell.second * boxHeightPx) }
+
+                        var startCell by remember(shoe.id) { mutableStateOf(currentCell) }
+
+                        // Synchronisation avec la grille en mémoire
+                        LaunchedEffect(currentCell, boxWidthPx, boxHeightPx) {
+                            if (draggingShoeId != shoe.id) {
+                                offsetX = currentCell.first * boxWidthPx
+                                offsetY = currentCell.second * boxHeightPx
+                            }
+                        }
 
                         val matchesFilter = (searchQuery.isBlank() ||
                                 shoe.nom.contains(searchQuery, ignoreCase = true) ||
@@ -307,16 +324,42 @@ fun CollectionScreen(
                                 .border(blockBorder, RoundedCornerShape(0.dp))
                                 .pointerInput(shoe.id) {
                                     detectDragGestures(
+                                        onDragStart = {
+                                            draggingShoeId = shoe.id
+                                            startCell = gridPositions[shoe.id] ?: Pair(shoe.gridCol, shoe.gridRow)
+                                        },
                                         onDragEnd = {
-                                            val maxAllowedX = totalGridWidthPx - boxWidthPx
-                                            val maxAllowedY = totalGridHeightPx - boxHeightPx
-                                            val targetX = ((offsetX / boxWidthPx).roundToInt() * boxWidthPx).coerceIn(0f, maxAllowedX)
-                                            val targetY = ((offsetY / boxHeightPx).roundToInt() * boxHeightPx).coerceIn(0f, maxAllowedY)
+                                            val targetCol = (offsetX / boxWidthPx).roundToInt().coerceIn(0, maxCols - 1)
+                                            val targetRow = (offsetY / boxHeightPx).roundToInt().coerceIn(0, maxRows - 1)
 
-                                            shoePositions[shoe.id] = Offset(targetX, targetY)
-                                            offsetX = targetX
-                                            offsetY = targetY
-                                            onUpdatePosition(shoe.id, targetX, targetY, shoe.idSection)
+                                            // Recherche de l'occupant de la case cible directement dans la carte mémoire synchrone
+                                            val occupantId = gridPositions.entries.find { (id, cell) ->
+                                                id != shoe.id && cell.first == targetCol && cell.second == targetRow
+                                            }?.key
+
+                                            if (occupantId != null) {
+                                                // SWAP SYNCHRONE PARFAIT
+                                                gridPositions[shoe.id] = Pair(targetCol, targetRow)
+                                                gridPositions[occupantId] = startCell
+
+                                                offsetX = targetCol * boxWidthPx
+                                                offsetY = targetRow * boxHeightPx
+
+                                                onUpdatePosition(shoe.id, targetCol, targetRow, shoe.idSection)
+                                                onUpdatePosition(occupantId, startCell.first, startCell.second, null)
+                                            } else {
+                                                // CASE LIBRE
+                                                gridPositions[shoe.id] = Pair(targetCol, targetRow)
+
+                                                offsetX = targetCol * boxWidthPx
+                                                offsetY = targetRow * boxHeightPx
+
+                                                onUpdatePosition(shoe.id, targetCol, targetRow, shoe.idSection)
+                                            }
+                                            draggingShoeId = null
+                                        },
+                                        onDragCancel = {
+                                            draggingShoeId = null
                                         }
                                     ) { change, dragAmount ->
                                         change.consume()
@@ -376,8 +419,8 @@ fun CollectionScreen(
 
                     // --- 2. ÉTIQUETTES FLOTTANTES (AU PREMIER PLAN) ---
                     etiquettes.forEach { etiquette ->
-                        var tagX by remember(etiquette.id) { mutableStateOf(etiquette.x) }
-                        var tagY by remember(etiquette.id) { mutableStateOf(etiquette.y) }
+                        var tagX by remember(etiquette.id, dpToPx) { mutableFloatStateOf(etiquette.x * dpToPx) }
+                        var tagY by remember(etiquette.id, dpToPx) { mutableFloatStateOf(etiquette.y * dpToPx) }
 
                         Surface(
                             modifier = Modifier
@@ -385,12 +428,12 @@ fun CollectionScreen(
                                 .pointerInput(etiquette.id) {
                                     detectDragGestures(
                                         onDragEnd = {
-                                            onUpdateEtiquettePosition(etiquette.id, tagX, tagY)
+                                            onUpdateEtiquettePosition(etiquette.id, tagX / dpToPx, tagY / dpToPx)
                                         }
                                     ) { change, dragAmount ->
                                         change.consume()
-                                        tagX = (tagX + dragAmount.x).coerceIn(0f, totalGridWidthPx - 100f)
-                                        tagY = (tagY + dragAmount.y).coerceIn(0f, totalGridHeightPx - 50f)
+                                        tagX = (tagX + dragAmount.x).coerceIn(0f, totalGridWidthPx - tagMarginXPx)
+                                        tagY = (tagY + dragAmount.y).coerceIn(0f, totalGridHeightPx - tagMarginYPx)
                                     }
                                 }
                                 .clickable { onEditEtiquette(etiquette) },
@@ -440,10 +483,12 @@ fun CollectionScreen(
                     val tagWidthPx = (tag.texte.length * 11f + 60f).coerceIn(120f, 400f)
                     val tagHeightPx = 36f
 
-                    val tagCenterX = tag.x + (tagWidthPx / 2f)
-                    val tagCenterY = tag.y + (tagHeightPx / 2f)
+                    val tagPxX = tag.x * dpToPx
+                    val tagPxY = tag.y * dpToPx
+                    val tagCenterX = tagPxX + (tagWidthPx / 2f)
+                    val tagCenterY = tagPxY + (tagHeightPx / 2f)
 
-                    val isOffScreen = tagCenterX < viewMinX || tagCenterX > viewMaxX ||
+                    val isOffScreen = tagCenterX !in viewMinX..viewMaxX ||
                             tagCenterY < viewMinY || tagCenterY > viewMaxY
 
                     if (isOffScreen) {
@@ -463,8 +508,8 @@ fun CollectionScreen(
                             modifier = Modifier
                                 .offset { IntOffset(edgeX.roundToInt(), edgeY.roundToInt()) }
                                 .clickable {
-                                    val targetPanX = -(tag.x - (screenWidthPx / 2f) + (tagWidthPx / 2f))
-                                    val targetPanY = -(tag.y - (screenHeightPx / 2f) + (tagHeightPx / 2f))
+                                    val targetPanX = -(tag.x * dpToPx - (screenWidthPx / 2f) + (tagWidthPx / 2f))
+                                    val targetPanY = -(tag.y * dpToPx - (screenHeightPx / 2f) + (tagHeightPx / 2f))
                                     panOffsetX = targetPanX.coerceIn(-totalGridWidthPx + screenWidthPx, 0f)
                                     panOffsetY = targetPanY.coerceIn(-totalGridHeightPx + screenHeightPx, 0f)
                                 },
@@ -650,8 +695,8 @@ fun CollectionScreen(
                                                         isEtiquetteDropdownExpanded = false
                                                         val tagWidthPx = (tag.texte.length * 11f + 60f).coerceIn(120f, 600f)
                                                         val tagHeightPx = 45f
-                                                        val targetPanX = -(tag.x - (screenWidthPx / 2f) + (tagWidthPx / 2f))
-                                                        val targetPanY = -(tag.y - (screenHeightPx / 2f) + (tagHeightPx / 2f))
+                                                        val targetPanX = -(tag.x * dpToPx - (screenWidthPx / 2f) + (tagWidthPx / 2f))
+                                                        val targetPanY = -(tag.y * dpToPx - (screenHeightPx / 2f) + (tagHeightPx / 2f))
                                                         panOffsetX = targetPanX.coerceIn(-totalGridWidthPx + screenWidthPx, 0f)
                                                         panOffsetY = targetPanY.coerceIn(-totalGridHeightPx + screenHeightPx, 0f)
                                                     }
@@ -668,8 +713,8 @@ fun CollectionScreen(
                         // --- CRÉATION ÉTIQUETTE (AU CENTRE DE L'ÉCRAN) ---
                         OutlinedButton(
                             onClick = {
-                                val (centerX, centerY) = calculateViewportCenter()
-                                onOpenAddEtiquette(centerX, centerY)
+                                val (col, row) = calculateViewportCenterCell()
+                                onOpenAddEtiquette(col * GridUtils.CELL_W_DP, row * GridUtils.CELL_H_DP)
                             },
                             modifier = Modifier.height(36.dp)
                         ) {
@@ -683,8 +728,8 @@ fun CollectionScreen(
                         // --- CRÉATION BOÎTE (AU CENTRE DE L'ÉCRAN) ---
                         Button(
                             onClick = {
-                                val (centerX, centerY) = calculateViewportCenter()
-                                onOpenAddChaussure(centerX, centerY)
+                                val (col, row) = calculateViewportCenterCell()
+                                onOpenAddChaussure(col, row)
                             },
                             modifier = Modifier.height(36.dp)
                         ) {

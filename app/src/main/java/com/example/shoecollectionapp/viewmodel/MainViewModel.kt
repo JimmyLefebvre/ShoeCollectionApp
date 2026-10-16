@@ -12,8 +12,14 @@ import com.example.shoecollectionapp.data.Section
 import com.example.shoecollectionapp.data.SortOption
 import com.example.shoecollectionapp.data.repository.CollectionRepositoryImpl
 import com.example.shoecollectionapp.utils.BrandUtils
+import com.example.shoecollectionapp.utils.GridUtils
 import com.example.shoecollectionapp.utils.ImageUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -29,6 +35,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val pieces: StateFlow<List<Piece>>
     val allChaussures: StateFlow<List<Chaussure>>
+
+    // Messages ponctuels pour l'UI (échec d'enregistrement de photo, etc.)
+    private val _events = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val events: SharedFlow<String> = _events.asSharedFlow()
 
     private val _selectedPieceId = MutableStateFlow<Long?>(null)
     val selectedPieceId: StateFlow<Long?> = _selectedPieceId.asStateFlow()
@@ -77,7 +87,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectPiece(pieceId: Long) {
+        switchToPiece(pieceId)
+    }
+
+    // Changer de pièce réinitialise recherche et filtre marque : sinon un filtre sur une
+    // marque absente de la nouvelle pièce grise toutes les boîtes sans puce sélectionnée.
+    private fun switchToPiece(pieceId: Long?) {
         _selectedPieceId.value = pieceId
+        _searchQuery.value = ""
+        _selectedBrandFilter.value = null
     }
 
     fun updateSearchQuery(query: String) {
@@ -97,7 +115,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val normalizedName = BrandUtils.normalizeBrand(nom)
             val id = repository.insertPiece(Piece(nom = normalizedName))
-            _selectedPieceId.value = id
+            switchToPiece(id)
         }
     }
 
@@ -110,9 +128,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deletePiece(pieceId: Long) {
         viewModelScope.launch {
+            val photoPaths = repository.getChaussuresSnapshot(pieceId).map { it.photoPath }
             repository.deletePiece(pieceId)
+            photoPaths.forEach { deletePhoto(it) }
             if (_selectedPieceId.value == pieceId) {
-                _selectedPieceId.value = pieces.value.firstOrNull { it.id != pieceId }?.id
+                switchToPiece(pieces.value.firstOrNull { it.id != pieceId }?.id)
             }
         }
     }
@@ -159,15 +179,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         description: String,
         imageUri: Uri?,
         pieceId: Long,
-        posX: Float = 0f,
-        posY: Float = 0f
+        gridCol: Int = 0,
+        gridRow: Int = 0
     ) {
         viewModelScope.launch {
-            val localPath = imageUri?.let {
-                ImageUtils.saveImageToInternalStorage(getApplication(), it)
-            } ?: ""
+            val localPath = if (imageUri != null) {
+                savePhoto(imageUri) ?: run {
+                    _events.tryEmit("Photo non enregistrée : la paire est créée sans photo.")
+                    ""
+                }
+            } else {
+                ""
+            }
 
             val normalizedBrand = BrandUtils.normalizeBrand(marque)
+
+            // Évite de créer une boîte par-dessus une autre
+            val occupied = repository.getChaussuresSnapshot(pieceId)
+                .map { Pair(it.gridCol, it.gridRow) }
+                .toSet()
+            val (freeCol, freeRow) = GridUtils.nearestFreeCell(gridCol, gridRow, occupied)
+                ?: Pair(gridCol, gridRow)
 
             repository.insertChaussure(
                 Chaussure(
@@ -176,8 +208,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     marque = normalizedBrand,
                     description = description.trim(),
                     photoPath = localPath,
-                    posX = posX,
-                    posY = posY
+                    gridCol = freeCol,
+                    gridRow = freeRow
                 )
             )
         }
@@ -193,21 +225,49 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         viewModelScope.launch {
             var photoPath = chaussure.photoPath
+            var replacedPhotoPath: String? = null
             if (newImageUri != null) {
-                photoPath = ImageUtils.saveImageToInternalStorage(getApplication(), newImageUri) ?: ""
+                val saved = savePhoto(newImageUri)
+                if (saved != null) {
+                    replacedPhotoPath = chaussure.photoPath
+                    photoPath = saved
+                } else {
+                    _events.tryEmit("Nouvelle photo non enregistrée : l'ancienne est conservée.")
+                }
             }
 
             val normalizedBrand = BrandUtils.normalizeBrand(marque)
 
+            // Changement de pièce : la section de l'ancienne pièce n'existe plus ici et la case
+            // d'origine peut être occupée dans la pièce de destination.
+            var gridCol = chaussure.gridCol
+            var gridRow = chaussure.gridRow
+            var idSection = chaussure.idSection
+            if (newPieceId != chaussure.idPiece) {
+                val occupied = repository.getChaussuresSnapshot(newPieceId)
+                    .map { Pair(it.gridCol, it.gridRow) }
+                    .toSet()
+                GridUtils.nearestFreeCell(gridCol, gridRow, occupied)?.let { (col, row) ->
+                    gridCol = col
+                    gridRow = row
+                }
+                idSection = null
+            }
+
             repository.updateChaussure(
                 chaussure.copy(
                     idPiece = newPieceId,
+                    idSection = idSection,
+                    gridCol = gridCol,
+                    gridRow = gridRow,
                     nom = nom.trim(),
                     marque = normalizedBrand,
                     description = description.trim(),
                     photoPath = photoPath
                 )
             )
+            // L'ancien fichier n'est supprimé qu'une fois la base à jour
+            replacedPhotoPath?.let { deletePhoto(it) }
         }
     }
 
@@ -219,13 +279,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteChaussure(chaussureId: Long) {
         viewModelScope.launch {
+            val photoPath = repository.getChaussureById(chaussureId)?.photoPath
             repository.deleteChaussure(chaussureId)
+            photoPath?.let { deletePhoto(it) }
         }
     }
 
-    fun updateShoePosition(id: Long, x: Float, y: Float, sectionId: Long?) {
+    // --- PHOTOS (I/O hors du thread principal) ---
+    private suspend fun savePhoto(uri: Uri): String? = withContext(Dispatchers.IO) {
+        ImageUtils.saveImageToInternalStorage(getApplication(), uri)
+    }
+
+    private suspend fun deletePhoto(path: String) {
+        withContext(Dispatchers.IO) {
+            ImageUtils.deleteInternalImage(getApplication(), path)
+        }
+    }
+
+    fun updateShoePosition(id: Long, col: Int, row: Int, sectionId: Long?) {
         viewModelScope.launch {
-            repository.updateChaussurePosition(id, x, y, sectionId)
+            repository.updateChaussurePosition(id, col, row, sectionId)
         }
     }
 }

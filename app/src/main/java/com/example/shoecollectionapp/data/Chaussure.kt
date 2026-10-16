@@ -2,6 +2,7 @@ package com.example.shoecollectionapp.data
 
 import androidx.room.Entity
 import androidx.room.ForeignKey
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(
@@ -13,7 +14,8 @@ import androidx.room.PrimaryKey
             childColumns = ["idPiece"],
             onDelete = ForeignKey.CASCADE
         )
-    ]
+    ],
+    indices = [Index(value = ["idPiece"])]
 )
 data class Chaussure(
     @PrimaryKey(autoGenerate = true)
@@ -24,8 +26,8 @@ data class Chaussure(
     val photoPath: String,
     val idPiece: Long,
     val idSection: Long? = null,
-    val posX: Float = 50f,
-    val posY: Float = 50f,
+    val gridCol: Int = 0,
+    val gridRow: Int = 0,
     val isFavorite: Boolean = false,
     val createdDate: Long = System.currentTimeMillis(),
     val positionIndex: Int = 0

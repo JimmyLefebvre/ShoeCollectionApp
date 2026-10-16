@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
@@ -16,6 +15,8 @@ import com.example.shoecollectionapp.data.Etiquette
 import com.example.shoecollectionapp.data.Piece
 import java.io.File
 import java.io.FileOutputStream
+import androidx.core.graphics.toColorInt
+import androidx.core.graphics.createBitmap
 
 object RoomImageExporter {
 
@@ -28,49 +29,52 @@ object RoomImageExporter {
         val pieceShoes = shoes.filter { it.idPiece == piece.id }
         val pieceEtiquettes = etiquettes.filter { it.idPiece == piece.id }
 
-        val cellWidth = 110f * 2f
-        val cellHeight = 70f * 2f
+        // Rendu à l'échelle x2 par rapport aux dp de l'écran
+        val scale = 2f
+        val cellWidth = GridUtils.CELL_W_DP * scale
+        val cellHeight = GridUtils.CELL_H_DP * scale
 
-        // Boîte englobante
-        val minCol = minOf(
-            pieceShoes.minOfOrNull { (it.posX / cellWidth).toInt() } ?: 0,
-            pieceEtiquettes.minOfOrNull { (it.x / cellWidth).toInt() } ?: 0,
-            0
-        ).coerceAtLeast(0)
+        // Boîte englobante du contenu, en pixels d'export
+        var minLeft = Float.MAX_VALUE
+        var minTop = Float.MAX_VALUE
+        var maxRight = 0f
+        var maxBottom = 0f
+        pieceShoes.forEach {
+            val left = it.gridCol * cellWidth
+            val top = it.gridRow * cellHeight
+            minLeft = minOf(minLeft, left)
+            minTop = minOf(minTop, top)
+            maxRight = maxOf(maxRight, left + cellWidth)
+            maxBottom = maxOf(maxBottom, top + cellHeight)
+        }
+        pieceEtiquettes.forEach {
+            val left = it.x * scale
+            val top = it.y * scale
+            minLeft = minOf(minLeft, left)
+            minTop = minOf(minTop, top)
+            maxRight = maxOf(maxRight, left + 400f)
+            maxBottom = maxOf(maxBottom, top + 60f)
+        }
+        if (minLeft == Float.MAX_VALUE) {
+            minLeft = 0f; minTop = 0f; maxRight = cellWidth * 4; maxBottom = cellHeight * 3
+        }
 
-        val minRow = minOf(
-            pieceShoes.minOfOrNull { (it.posY / cellHeight).toInt() } ?: 0,
-            pieceEtiquettes.minOfOrNull { (it.y / cellHeight).toInt() } ?: 0,
-            0
-        ).coerceAtLeast(0)
+        // Alignement sur la grille pour que les lignes tombent sur les cases
+        val startX = kotlin.math.floor(minLeft / cellWidth) * cellWidth
+        val startY = kotlin.math.floor(minTop / cellHeight) * cellHeight
+        val bitmapWidth = (kotlin.math.ceil((maxRight - startX) / cellWidth) * cellWidth).toInt().coerceAtLeast(400)
+        val bitmapHeight = (kotlin.math.ceil((maxBottom - startY) / cellHeight) * cellHeight).toInt().coerceAtLeast(300)
 
-        val maxCol = maxOf(
-            pieceShoes.maxOfOrNull { ((it.posX + cellWidth) / cellWidth).toInt() } ?: 5,
-            pieceEtiquettes.maxOfOrNull { ((it.x + 200f) / cellWidth).toInt() } ?: 5,
-            5
-        ).coerceAtMost(25)
-
-        val maxRow = maxOf(
-            pieceShoes.maxOfOrNull { ((it.posY + cellHeight) / cellHeight).toInt() } ?: 5,
-            pieceEtiquettes.maxOfOrNull { ((it.y + 60f) / cellHeight).toInt() } ?: 5,
-            5
-        ).coerceAtMost(25)
-
-        val startX = (minCol * cellWidth)
-        val startY = (minRow * cellHeight)
-        val bitmapWidth = ((maxCol - minCol + 1) * cellWidth).toInt().coerceAtLeast(400)
-        val bitmapHeight = ((maxRow - minRow + 1) * cellHeight).toInt().coerceAtLeast(300)
-
-        val bitmap = Bitmap.createBitmap(bitmapWidth, bitmapHeight, Bitmap.Config.ARGB_8888)
+        val bitmap = createBitmap(bitmapWidth, bitmapHeight)
         val canvas = Canvas(bitmap)
 
         // Fond
-        val bgPaint = Paint().apply { color = Color.parseColor("#1C1B1F") }
+        val bgPaint = Paint().apply { color = "#1C1B1F".toColorInt() }
         canvas.drawRect(0f, 0f, bitmapWidth.toFloat(), bitmapHeight.toFloat(), bgPaint)
 
         // Grille
         val gridPaint = Paint().apply {
-            color = Color.parseColor("#50FFFFFF")
+            color = "#50FFFFFF".toColorInt()
             strokeWidth = 2f
             style = Paint.Style.STROKE
         }
@@ -88,30 +92,30 @@ object RoomImageExporter {
 
         // Peintures cartes chaussures
         val cardPaint = Paint().apply {
-            color = Color.parseColor("#FFFBFE")
+            color = "#FFFBFE".toColorInt()
             style = Paint.Style.FILL
         }
         val cardBorderPaint = Paint().apply {
-            color = Color.parseColor("#79747E")
+            color = "#79747E".toColorInt()
             strokeWidth = 2f
             style = Paint.Style.STROKE
         }
         val textPaint = Paint().apply {
-            color = Color.parseColor("#1C1B1F")
+            color = "#1C1B1F".toColorInt()
             textSize = 24f
             typeface = Typeface.DEFAULT_BOLD
             isAntiAlias = true
         }
         val brandPaint = Paint().apply {
-            color = Color.parseColor("#6750A4")
+            color = "#6750A4".toColorInt()
             textSize = 18f
             typeface = Typeface.DEFAULT_BOLD
             isAntiAlias = true
         }
 
         pieceShoes.forEach { shoe ->
-            val left = (shoe.posX * 2f) - startX
-            val top = (shoe.posY * 2f) - startY
+            val left = (shoe.gridCol * cellWidth) - startX
+            val top = (shoe.gridRow * cellHeight) - startY
             val right = left + cellWidth
             val bottom = top + cellHeight
 
@@ -128,7 +132,14 @@ object RoomImageExporter {
             if (shoe.photoPath.isNotBlank()) {
                 val photoFile = File(shoe.photoPath)
                 if (photoFile.exists()) {
-                    val photoBmp = BitmapFactory.decodeFile(photoFile.absolutePath)
+                    val sampling = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeFile(photoFile.absolutePath, sampling)
+                    var sample = 1
+                    while (sampling.outWidth / (sample * 2) >= 208 && sampling.outHeight / (sample * 2) >= 208) sample *= 2
+                    val photoBmp = BitmapFactory.decodeFile(
+                        photoFile.absolutePath,
+                        BitmapFactory.Options().apply { inSampleSize = sample }
+                    )
                     if (photoBmp != null) {
                         val imgSize = 104f // 52dp * 2
                         val imgLeft = right - imgSize - 12f
@@ -144,24 +155,24 @@ object RoomImageExporter {
 
         // Étiquettes au premier plan
         val tagBgPaint = Paint().apply {
-            color = Color.parseColor("#EADDFF")
+            color = "#EADDFF".toColorInt()
             style = Paint.Style.FILL
         }
         val tagBorderPaint = Paint().apply {
-            color = Color.parseColor("#6750A4")
+            color = "#6750A4".toColorInt()
             strokeWidth = 3f
             style = Paint.Style.STROKE
         }
         val tagTextPaint = Paint().apply {
-            color = Color.parseColor("#21005D")
+            color = "#21005D".toColorInt()
             textSize = 26f
             typeface = Typeface.DEFAULT_BOLD
             isAntiAlias = true
         }
 
         pieceEtiquettes.forEach { tag ->
-            val left = (tag.x * 2f) - startX
-            val top = (tag.y * 2f) - startY
+            val left = (tag.x * scale) - startX
+            val top = (tag.y * scale) - startY
             val textWidth = tagTextPaint.measureText(tag.texte)
             val rectWidth = textWidth + 50f
             val rectHeight = 60f
@@ -169,7 +180,7 @@ object RoomImageExporter {
             val rect = RectF(left, top, left + rectWidth, top + rectHeight)
             canvas.drawRoundRect(rect, 30f, 30f, tagBgPaint)
             canvas.drawRoundRect(rect, 30f, 30f, tagBorderPaint)
-            canvas.drawText("🏷️ " + tag.texte, left + 20f, top + 40f, tagTextPaint)
+            canvas.drawText(tag.texte, left + 20f, top + 40f, tagTextPaint)
         }
 
         val imagesDir = File(context.cacheDir, "exported_rooms")
