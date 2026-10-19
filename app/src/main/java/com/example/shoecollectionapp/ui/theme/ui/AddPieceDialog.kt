@@ -44,7 +44,7 @@ fun AddPieceDialog(
                 OutlinedTextField(
                     value = nomPiece,
                     onValueChange = { nomPiece = it },
-                    label = { Text("Nom de la pièce (ex: Dressing, Chambre...)") },
+                    label = { Text("Nom de la pièce (ex: Chambre)") },
                     leadingIcon = { Icon(imageVector = Icons.Default.MeetingRoom, contentDescription = null) },
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp),

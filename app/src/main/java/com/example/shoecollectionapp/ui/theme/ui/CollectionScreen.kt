@@ -734,7 +734,7 @@ fun CollectionScreen(
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = onUpdateSearchQuery,
-                            label = { Text("Rechercher (nom, marque, description)...") },
+                            label = { Text("Rechercher (nom, marque, description..)") },
                             singleLine = true,
                             shape = RoundedCornerShape(16.dp),
                             modifier = Modifier.fillMaxWidth()
@@ -784,7 +784,7 @@ fun CollectionScreen(
                                             modifier = Modifier.size(14.dp)
                                         )
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Aller à...", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                        Text("Aller à..", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                                     }
 
                                     DropdownMenu(

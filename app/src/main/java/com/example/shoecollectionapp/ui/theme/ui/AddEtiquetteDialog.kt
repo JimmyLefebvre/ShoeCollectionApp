@@ -42,7 +42,7 @@ fun AddEtiquetteDialog(
             OutlinedTextField(
                 value = texte,
                 onValueChange = { texte = it },
-                label = { Text("Texte de l'étiquette (ex: Étagère Nike, Mur Est...)") },
+                label = { Text("Texte de l'étiquette (ex: À l'entrée, Dans l'étagère)") },
                 leadingIcon = { Icon(imageVector = Icons.AutoMirrored.Filled.Label, contentDescription = null) },
                 singleLine = true,
                 shape = RoundedCornerShape(16.dp),

@@ -68,7 +68,7 @@ fun AddChaussureDialog(
         shape = RoundedCornerShape(28.dp),
         title = {
             Text(
-                text = "Nouvelle chaussure",
+                text = "Nouvelles chaussures",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold
             )
@@ -78,7 +78,7 @@ fun AddChaussureDialog(
                 OutlinedTextField(
                     value = nom,
                     onValueChange = { nom = it },
-                    label = { Text("Nom du modèle") },
+                    label = { Text("Nom du modèle (ex: AJ1)") },
                     leadingIcon = { Icon(imageVector = Icons.Default.Sell, contentDescription = null) },
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp),
@@ -89,7 +89,7 @@ fun AddChaussureDialog(
                 OutlinedTextField(
                     value = marque,
                     onValueChange = { marque = it },
-                    label = { Text("Marque (ex: Nike, Adidas...)") },
+                    label = { Text("Marque (ex: Nike)") },
                     leadingIcon = { Icon(imageVector = Icons.Default.Storefront, contentDescription = null) },
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp),
@@ -110,7 +110,7 @@ fun AddChaussureDialog(
                 OutlinedTextField(
                     value = description,
                     onValueChange = { description = it },
-                    label = { Text("Description / Remarques") },
+                    label = { Text("Description (ex: -Air Jordan 3 Retro- Modèle: Cement Grey)") },
                     leadingIcon = { Icon(imageVector = Icons.AutoMirrored.Filled.Notes, contentDescription = null) },
                     maxLines = 3,
                     shape = RoundedCornerShape(16.dp),
