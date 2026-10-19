@@ -1,12 +1,20 @@
 package com.example.shoecollectionapp.ui.theme.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Label
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -33,14 +41,23 @@ fun EditEtiquetteDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(text = "Modifier l'étiquette", fontWeight = FontWeight.Bold) },
+        shape = RoundedCornerShape(28.dp),
+        title = {
+            Text(
+                text = "Modifier l'étiquette",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+        },
         text = {
             Column {
                 OutlinedTextField(
                     value = texte,
                     onValueChange = { texte = it },
                     label = { Text("Texte de l'étiquette") },
+                    leadingIcon = { Icon(imageVector = Icons.AutoMirrored.Filled.Label, contentDescription = null) },
                     singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -48,10 +65,14 @@ fun EditEtiquetteDialog(
 
                 OutlinedButton(
                     onClick = onDelete,
+                    shape = CircleShape,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.6f)),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Supprimer l'étiquette")
+                    Icon(imageVector = Icons.Default.DeleteForever, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Supprimer l'étiquette", fontWeight = FontWeight.SemiBold)
                 }
             }
         },
@@ -61,14 +82,15 @@ fun EditEtiquetteDialog(
                     if (texte.isNotBlank()) {
                         onConfirmSave(texte)
                     }
-                }
+                },
+                shape = CircleShape
             ) {
-                Text("Enregistrer")
+                Text("Enregistrer", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Annuler")
+                Text("Annuler", fontWeight = FontWeight.SemiBold)
             }
         }
     )
