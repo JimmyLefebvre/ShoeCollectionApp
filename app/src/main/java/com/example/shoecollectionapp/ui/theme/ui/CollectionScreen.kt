@@ -1,5 +1,14 @@
 package com.example.shoecollectionapp.ui.theme.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -15,6 +24,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -22,6 +32,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -33,8 +44,10 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -102,18 +115,17 @@ fun CollectionScreen(
     onUpdateSearchQuery: (String) -> Unit,
     onSelectBrandFilter: (String?) -> Unit
 ) {
-    // ID de la boîte actuellement en cours de glissement
+    // Empêche la réinitialisation de la position locale pendant le drag
     var draggingShoeId by remember { mutableStateOf<Long?>(null) }
 
     var inspectedChaussure by remember { mutableStateOf<Chaussure?>(null) }
     var isHeaderExpanded by remember { mutableStateOf(true) }
     var isEtiquetteDropdownExpanded by remember { mutableStateOf(false) }
 
-    // Déplacement de la caméra (Pan)
+    // Translation de la caméra (Pan)
     var panOffsetX by remember { mutableFloatStateOf(0f) }
     var panOffsetY by remember { mutableFloatStateOf(0f) }
 
-    // Dimensions d'un bloc de la grille : 110dp de largeur x 70dp de hauteur
     val boxWidthDp = GridUtils.CELL_W_DP.dp
     val boxHeightDp = GridUtils.CELL_H_DP.dp
 
@@ -122,13 +134,12 @@ fun CollectionScreen(
     val boxWidthPx = with(density) { boxWidthDp.toPx() }
     val boxHeightPx = with(density) { boxHeightDp.toPx() }
 
-    // Grille totale 25 x 25
     val maxCols = GridUtils.COLS
     val maxRows = GridUtils.ROWS
     val totalGridWidthPx = boxWidthPx * maxCols
     val totalGridHeightPx = boxHeightPx * maxRows
 
-    // Source de vérité synchrone en mémoire pour la grille (col, row) de chaque chaussure
+    // Positions locales synchronisées pour éviter les saccades pendant le drag
     val gridPositions = remember(selectedPieceId) { mutableStateMapOf<Long, Pair<Int, Int>>() }
     LaunchedEffect(chaussures, selectedPieceId) {
         chaussures.forEach { shoe ->
@@ -138,42 +149,108 @@ fun CollectionScreen(
         }
     }
 
-    // Marges de clamp des étiquettes
     val tagMarginXPx = with(density) { 100.dp.toPx() }
     val tagMarginYPx = with(density) { 50.dp.toPx() }
 
-    // Filtrer les marques uniquement parmi les chaussures présentes dans la pièce active
+    // Marques uniques dans la pièce sélectionnée
     val availableBrands = chaussures
         .map { it.marque.trim() }
         .filter { it.isNotBlank() }
         .distinct()
         .sorted()
 
-    // Dialog d'inspection de la boîte
+    // Modale de détail / inspection
     inspectedChaussure?.let { shoe ->
         val currentShoe = chaussures.find { it.id == shoe.id } ?: shoe
 
         AlertDialog(
             onDismissRequest = { inspectedChaussure = null },
-            title = { Text(text = currentShoe.nom, fontWeight = FontWeight.Bold) },
+            shape = RoundedCornerShape(28.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            title = {
+                Text(
+                    text = currentShoe.nom,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
             text = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    AsyncImage(
-                        model = File(currentShoe.photoPath),
-                        contentDescription = currentShoe.nom,
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        tonalElevation = 4.dp,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(200.dp)
-                            .clip(RoundedCornerShape(12.dp)),
-                        contentScale = ContentScale.Fit
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    if (currentShoe.marque.isNotBlank()) {
-                        Text(text = "Marque : ${currentShoe.marque}", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                            .heightIn(min = 180.dp, max = 250.dp)
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(8.dp)
+                        ) {
+                            AsyncImage(
+                                model = File(currentShoe.photoPath),
+                                contentDescription = currentShoe.nom,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp)),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
                     }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    if (currentShoe.marque.isNotBlank()) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.4f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Storefront,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = currentShoe.marque,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                    }
+
                     if (currentShoe.description.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(text = "Description : ${currentShoe.description}", style = MaterialTheme.typography.bodyMedium)
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainer,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text(
+                                    text = currentShoe.description,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
                 }
             },
@@ -191,7 +268,17 @@ fun CollectionScreen(
                             onClick = {
                                 onToggleFavorite(currentShoe)
                                 inspectedChaussure = currentShoe.copy(isFavorite = !currentShoe.isFavorite)
-                            }
+                            },
+                            shape = CircleShape,
+                            colors = if (currentShoe.isFavorite) {
+                                ButtonDefaults.outlinedButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
+                                    contentColor = MaterialTheme.colorScheme.error
+                                )
+                            } else {
+                                ButtonDefaults.outlinedButtonColors()
+                            },
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
                         ) {
                             Icon(
                                 imageVector = if (currentShoe.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
@@ -199,19 +286,20 @@ fun CollectionScreen(
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(16.dp)
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Favori", maxLines = 1)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Favori", maxLines = 1, fontWeight = FontWeight.Bold)
                         }
 
                         Button(
                             onClick = {
                                 inspectedChaussure = null
                                 onOpenEditChaussure(currentShoe)
-                            }
+                            },
+                            shape = CircleShape
                         ) {
                             Icon(imageVector = Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Modifier", maxLines = 1)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Modifier", maxLines = 1, fontWeight = FontWeight.Bold)
                         }
                     }
 
@@ -229,7 +317,7 @@ fun CollectionScreen(
         val screenWidthPx = with(density) { maxWidth.toPx() }
         val screenHeightPx = with(density) { maxHeight.toPx() }
 
-        // Case située au centre de la vue courante
+        // Calcule la case au centre du viewport
         fun calculateViewportCenterCell(): Pair<Int, Int> {
             val viewCenterX = -panOffsetX + (screenWidthPx / 2f) - (boxWidthPx / 2f)
             val viewCenterY = -panOffsetY + (screenHeightPx / 2f) - (boxHeightPx / 2f)
@@ -238,7 +326,6 @@ fun CollectionScreen(
             return Pair(col, row)
         }
 
-        // --- ESPACE 2D BORNÉ (25x25) ---
         if (selectedPieceId != null) {
             Box(
                 modifier = Modifier
@@ -252,7 +339,6 @@ fun CollectionScreen(
                         }
                     }
             ) {
-                // Grille exacte bornée 25 x 25 avec lignes blanches bien visibles
                 val gridColor = Color.White.copy(alpha = 0.35f)
                 val canvasModifier = Modifier
                     .fillMaxSize()
@@ -262,20 +348,21 @@ fun CollectionScreen(
                     )
 
                 Canvas(modifier = canvasModifier) {
+                    val cw = boxWidthPx
+                    val ch = boxHeightPx
 
                     var x = 0f
                     while (x <= totalGridWidthPx) {
                         drawLine(gridColor, Offset(x, 0f), Offset(x, totalGridHeightPx), strokeWidth = 1.5f)
-                        x += boxWidthPx
+                        x += cw
                     }
                     var y = 0f
                     while (y <= totalGridHeightPx) {
                         drawLine(gridColor, Offset(0f, y), Offset(totalGridWidthPx, y), strokeWidth = 1.5f)
-                        y += boxHeightPx
+                        y += ch
                     }
                 }
 
-                // Conteneur des éléments
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -284,7 +371,7 @@ fun CollectionScreen(
                             translationY = panOffsetY
                         )
                 ) {
-                    // --- 1. BOÎTES DE CHAUSSURES (SWAP parfait et synchrone) ---
+                    // Cartes chaussures
                     chaussures.forEach { shoe ->
                         val currentCell = gridPositions[shoe.id] ?: Pair(shoe.gridCol, shoe.gridRow)
                         var offsetX by remember(shoe.id) { mutableFloatStateOf(currentCell.first * boxWidthPx) }
@@ -292,7 +379,6 @@ fun CollectionScreen(
 
                         var startCell by remember(shoe.id) { mutableStateOf(currentCell) }
 
-                        // Synchronisation avec la grille en mémoire
                         LaunchedEffect(currentCell, boxWidthPx, boxHeightPx) {
                             if (draggingShoeId != shoe.id) {
                                 offsetX = currentCell.first * boxWidthPx
@@ -332,13 +418,12 @@ fun CollectionScreen(
                                             val targetCol = (offsetX / boxWidthPx).roundToInt().coerceIn(0, maxCols - 1)
                                             val targetRow = (offsetY / boxHeightPx).roundToInt().coerceIn(0, maxRows - 1)
 
-                                            // Recherche de l'occupant de la case cible directement dans la carte mémoire synchrone
                                             val occupantId = gridPositions.entries.find { (id, cell) ->
                                                 id != shoe.id && cell.first == targetCol && cell.second == targetRow
                                             }?.key
 
                                             if (occupantId != null) {
-                                                // SWAP SYNCHRONE PARFAIT
+                                                // Permutation entre les deux boîtes
                                                 gridPositions[shoe.id] = Pair(targetCol, targetRow)
                                                 gridPositions[occupantId] = startCell
 
@@ -348,7 +433,6 @@ fun CollectionScreen(
                                                 onUpdatePosition(shoe.id, targetCol, targetRow, shoe.idSection)
                                                 onUpdatePosition(occupantId, startCell.first, startCell.second, null)
                                             } else {
-                                                // CASE LIBRE
                                                 gridPositions[shoe.id] = Pair(targetCol, targetRow)
 
                                                 offsetX = targetCol * boxWidthPx
@@ -417,7 +501,7 @@ fun CollectionScreen(
                         }
                     }
 
-                    // --- 2. ÉTIQUETTES FLOTTANTES (AU PREMIER PLAN) ---
+                    // Étiquettes
                     etiquettes.forEach { etiquette ->
                         var tagX by remember(etiquette.id, dpToPx) { mutableFloatStateOf(etiquette.x * dpToPx) }
                         var tagY by remember(etiquette.id, dpToPx) { mutableFloatStateOf(etiquette.y * dpToPx) }
@@ -465,11 +549,11 @@ fun CollectionScreen(
                     }
                 }
 
-                // --- 3. CURSEURS/INDICATEURS DE BORD POUR ÉTIQUETTES HORS ÉCRAN ---
+                // Curseur de bord pour étiquettes hors écran
                 val viewMinX = -panOffsetX
                 val viewMaxX = -panOffsetX + screenWidthPx
-                val viewMinY = -panOffsetY + with(density) { 120.dp.toPx() } // sous le header
-                val viewMaxY = -panOffsetY + screenHeightPx - with(density) { 60.dp.toPx() } // au-dessus du bottom navigation
+                val viewMinY = -panOffsetY + with(density) { 120.dp.toPx() }
+                val viewMaxY = -panOffsetY + screenHeightPx - with(density) { 60.dp.toPx() }
 
                 val viewCenterX = -panOffsetX + (screenWidthPx / 2f)
                 val viewCenterY = -panOffsetY + (screenHeightPx / 2f)
@@ -513,7 +597,7 @@ fun CollectionScreen(
                                     panOffsetX = targetPanX.coerceIn(-totalGridWidthPx + screenWidthPx, 0f)
                                     panOffsetY = targetPanY.coerceIn(-totalGridHeightPx + screenHeightPx, 0f)
                                 },
-                            shape = RoundedCornerShape(16.dp),
+                            shape = CircleShape,
                             color = MaterialTheme.colorScheme.secondaryContainer,
                             shadowElevation = 6.dp,
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary)
@@ -555,15 +639,16 @@ fun CollectionScreen(
             }
         }
 
-        // --- INTERFACE FLOTTANTE LÉGÈRE ET FLUIDE ---
+        // Toolbar supérieure
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp)
-                .align(Alignment.TopCenter),
-            shape = RoundedCornerShape(14.dp),
-            tonalElevation = 2.dp,
-            shadowElevation = 4.dp,
+                .align(Alignment.TopCenter)
+                .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
+            shape = RoundedCornerShape(20.dp),
+            tonalElevation = 3.dp,
+            shadowElevation = 6.dp,
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
         ) {
             Column(modifier = Modifier.padding(10.dp)) {
@@ -583,10 +668,24 @@ fun CollectionScreen(
                                     selected = isSelected,
                                     onClick = { onSelectPiece(piece.id) },
                                     label = { Text(piece.nom) },
+                                    shape = CircleShape,
                                     trailingIcon = {
                                         if (isSelected) {
                                             IconButton(onClick = { onOpenEditPiece(piece) }, modifier = Modifier.size(16.dp)) {
-                                                Icon(imageVector = Icons.Default.Edit, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                                Surface(
+                                                    shape = CircleShape,
+                                                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                                                    modifier = Modifier.size(16.dp)
+                                                ) {
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Edit,
+                                                            contentDescription = null,
+                                                            tint = MaterialTheme.colorScheme.primary,
+                                                            modifier = Modifier.size(10.dp)
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -600,10 +699,12 @@ fun CollectionScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Button(
                             onClick = onOpenAddPiece,
-                            modifier = Modifier.height(36.dp)
+                            modifier = Modifier.height(36.dp),
+                            shape = CircleShape
                         ) {
                             Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Text("Pièce", style = MaterialTheme.typography.bodySmall)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Pièce", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                         }
                         IconButton(onClick = { isHeaderExpanded = !isHeaderExpanded }) {
                             Icon(
@@ -614,127 +715,138 @@ fun CollectionScreen(
                     }
                 }
 
-                if (isHeaderExpanded && selectedPieceId != null) {
-                    Spacer(modifier = Modifier.height(6.dp))
+                AnimatedVisibility(
+                    visible = isHeaderExpanded && selectedPieceId != null,
+                    enter = expandVertically(animationSpec = tween(300)) + fadeIn(animationSpec = tween(300)),
+                    exit = shrinkVertically(animationSpec = tween(250)) + fadeOut(animationSpec = tween(250))
+                ) {
+                    Column {
+                        Spacer(modifier = Modifier.height(6.dp))
 
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = onUpdateSearchQuery,
-                        label = { Text("Rechercher (nom, marque, description)...") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = onUpdateSearchQuery,
+                            label = { Text("Rechercher (nom, marque, description..)") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
 
-                    if (availableBrands.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            item {
-                                FilterChip(
-                                    selected = selectedBrandFilter == null,
-                                    onClick = { onSelectBrandFilter(null) },
-                                    label = { Text("Toutes", style = MaterialTheme.typography.bodySmall) }
-                                )
-                            }
-                            items(availableBrands) { brand ->
-                                FilterChip(
-                                    selected = selectedBrandFilter == brand,
-                                    onClick = { onSelectBrandFilter(brand) },
-                                    label = { Text(brand, style = MaterialTheme.typography.bodySmall) }
-                                )
+                        if (availableBrands.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                item {
+                                    FilterChip(
+                                        selected = selectedBrandFilter == null,
+                                        onClick = { onSelectBrandFilter(null) },
+                                        label = { Text("Toutes", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold) },
+                                        shape = CircleShape
+                                    )
+                                }
+                                items(availableBrands) { brand ->
+                                    FilterChip(
+                                        selected = selectedBrandFilter == brand,
+                                        onClick = { onSelectBrandFilter(brand) },
+                                        label = { Text(brand, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold) },
+                                        shape = CircleShape
+                                    )
+                                }
                             }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // --- LISTE DÉROULANTE ALLER À L'ÉTIQUETTE ---
-                        if (etiquettes.isNotEmpty()) {
-                            Box {
-                                OutlinedButton(
-                                    onClick = { isEtiquetteDropdownExpanded = true },
-                                    modifier = Modifier.height(36.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.Label,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Aller à...", style = MaterialTheme.typography.bodySmall)
-                                }
-
-                                DropdownMenu(
-                                    expanded = isEtiquetteDropdownExpanded,
-                                    onDismissRequest = { isEtiquetteDropdownExpanded = false }
-                                ) {
-                                    val calcMaxHeight = minOf(200.dp, (etiquettes.size * 48).dp)
-                                    Box(
-                                        modifier = Modifier
-                                            .width(180.dp)
-                                            .height(calcMaxHeight)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (etiquettes.isNotEmpty()) {
+                                Box {
+                                    OutlinedButton(
+                                        onClick = { isEtiquetteDropdownExpanded = true },
+                                        modifier = Modifier.height(36.dp),
+                                        shape = CircleShape,
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
                                     ) {
-                                        Column(
-                                            modifier = Modifier.verticalScroll(rememberScrollState())
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.Label,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Aller à..", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                    }
+
+                                    DropdownMenu(
+                                        expanded = isEtiquetteDropdownExpanded,
+                                        onDismissRequest = { isEtiquetteDropdownExpanded = false }
+                                    ) {
+                                        val calcMaxHeight = minOf(200.dp, (etiquettes.size * 48).dp)
+                                        Box(
+                                            modifier = Modifier
+                                                .width(180.dp)
+                                                .height(calcMaxHeight)
                                         ) {
-                                            etiquettes.forEach { tag ->
-                                                DropdownMenuItem(
-                                                    text = { Text(tag.texte, fontWeight = FontWeight.SemiBold) },
-                                                    leadingIcon = {
-                                                        Icon(
-                                                            imageVector = Icons.AutoMirrored.Filled.Label,
-                                                            contentDescription = null,
-                                                            modifier = Modifier.size(16.dp)
-                                                        )
-                                                    },
-                                                    onClick = {
-                                                        isEtiquetteDropdownExpanded = false
-                                                        val tagWidthPx = (tag.texte.length * 11f + 60f).coerceIn(120f, 600f)
-                                                        val tagHeightPx = 45f
-                                                        val targetPanX = -(tag.x * dpToPx - (screenWidthPx / 2f) + (tagWidthPx / 2f))
-                                                        val targetPanY = -(tag.y * dpToPx - (screenHeightPx / 2f) + (tagHeightPx / 2f))
-                                                        panOffsetX = targetPanX.coerceIn(-totalGridWidthPx + screenWidthPx, 0f)
-                                                        panOffsetY = targetPanY.coerceIn(-totalGridHeightPx + screenHeightPx, 0f)
-                                                    }
-                                                )
+                                            Column(
+                                                modifier = Modifier.verticalScroll(rememberScrollState())
+                                            ) {
+                                                etiquettes.forEach { tag ->
+                                                    DropdownMenuItem(
+                                                        text = { Text(tag.texte, fontWeight = FontWeight.SemiBold) },
+                                                        leadingIcon = {
+                                                            Icon(
+                                                                imageVector = Icons.AutoMirrored.Filled.Label,
+                                                                contentDescription = null,
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                        },
+                                                        onClick = {
+                                                            isEtiquetteDropdownExpanded = false
+                                                            val tagWidthPx = (tag.texte.length * 11f + 60f).coerceIn(120f, 600f)
+                                                            val tagHeightPx = 45f
+                                                            val targetPanX = -(tag.x * dpToPx - (screenWidthPx / 2f) + (tagWidthPx / 2f))
+                                                            val targetPanY = -(tag.y * dpToPx - (screenHeightPx / 2f) + (tagHeightPx / 2f))
+                                                            panOffsetX = targetPanX.coerceIn(-totalGridWidthPx + screenWidthPx, 0f)
+                                                            panOffsetY = targetPanY.coerceIn(-totalGridHeightPx + screenHeightPx, 0f)
+                                                        }
+                                                    )
+                                                }
                                             }
                                         }
                                     }
                                 }
+
+                                Spacer(modifier = Modifier.width(4.dp))
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    val (col, row) = calculateViewportCenterCell()
+                                    onOpenAddEtiquette(col * GridUtils.CELL_W_DP, row * GridUtils.CELL_H_DP)
+                                },
+                                modifier = Modifier.height(36.dp),
+                                shape = CircleShape,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                            ) {
+                                Icon(imageVector = Icons.AutoMirrored.Filled.Label, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Étiquette", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                             }
 
                             Spacer(modifier = Modifier.width(4.dp))
-                        }
 
-                        // --- CRÉATION ÉTIQUETTE (AU CENTRE DE L'ÉCRAN) ---
-                        OutlinedButton(
-                            onClick = {
-                                val (col, row) = calculateViewportCenterCell()
-                                onOpenAddEtiquette(col * GridUtils.CELL_W_DP, row * GridUtils.CELL_H_DP)
-                            },
-                            modifier = Modifier.height(36.dp)
-                        ) {
-                            Icon(imageVector = Icons.AutoMirrored.Filled.Label, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Étiquette", style = MaterialTheme.typography.bodySmall)
-                        }
-
-                        Spacer(modifier = Modifier.width(4.dp))
-
-                        // --- CRÉATION BOÎTE (AU CENTRE DE L'ÉCRAN) ---
-                        Button(
-                            onClick = {
-                                val (col, row) = calculateViewportCenterCell()
-                                onOpenAddChaussure(col, row)
-                            },
-                            modifier = Modifier.height(36.dp)
-                        ) {
-                            Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Text("Boîte", style = MaterialTheme.typography.bodySmall)
+                            Button(
+                                onClick = {
+                                    val (col, row) = calculateViewportCenterCell()
+                                    onOpenAddChaussure(col, row)
+                                },
+                                modifier = Modifier.height(36.dp),
+                                shape = CircleShape
+                            ) {
+                                Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Text("Boîte", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }

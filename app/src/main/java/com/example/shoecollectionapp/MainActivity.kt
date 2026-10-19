@@ -5,6 +5,11 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -234,45 +239,53 @@ fun MainScreen(viewModel: MainViewModel) {
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            when (selectedTab) {
-                0 -> CollectionScreen(
-                    pieces = pieces,
-                    etiquettes = etiquettes,
-                    chaussures = chaussures,
-                    allChaussures = allChaussures,
-                    selectedPieceId = selectedPieceId,
-                    searchQuery = searchQuery,
-                    selectedBrandFilter = selectedBrandFilter,
-                    onSelectPiece = { pieceId -> viewModel.selectPiece(pieceId) },
-                    onOpenAddPiece = { showAddPieceDialog = true },
-                    onOpenEditPiece = { piece -> editingPiece = piece },
-                    onOpenAddEtiquette = { x, y ->
-                        creationPosition = Pair(x, y)
-                        showAddEtiquetteDialog = true
-                    },
-                    onEditEtiquette = { etiquette -> editingEtiquette = etiquette },
-                    onOpenAddChaussure = { col, row ->
-                        creationCell = Pair(col, row)
-                        showAddChaussureDialog = true
-                    },
-                    onOpenEditChaussure = { chaussure -> editingChaussure = chaussure },
-                    onToggleFavorite = { chaussure -> viewModel.toggleFavorite(chaussure) },
-                    onDeleteChaussure = { id -> deletingChaussureId = id },
-                    onUpdatePosition = { id, x, y, sectionId -> viewModel.updateShoePosition(id, x, y, sectionId) },
-                    onUpdateEtiquettePosition = { id, x, y -> viewModel.updateEtiquettePosition(id, x, y) },
-                    onUpdateSearchQuery = { query -> viewModel.updateSearchQuery(query) },
-                    onSelectBrandFilter = { brand -> viewModel.setSelectedBrandFilter(brand) }
-                )
+            AnimatedContent(
+                targetState = selectedTab,
+                transitionSpec = {
+                    fadeIn(animationSpec = tween(220)) togetherWith fadeOut(animationSpec = tween(180))
+                },
+                label = "TabTransition"
+            ) { targetTab ->
+                when (targetTab) {
+                    0 -> CollectionScreen(
+                        pieces = pieces,
+                        etiquettes = etiquettes,
+                        chaussures = chaussures,
+                        allChaussures = allChaussures,
+                        selectedPieceId = selectedPieceId,
+                        searchQuery = searchQuery,
+                        selectedBrandFilter = selectedBrandFilter,
+                        onSelectPiece = { pieceId -> viewModel.selectPiece(pieceId) },
+                        onOpenAddPiece = { showAddPieceDialog = true },
+                        onOpenEditPiece = { piece -> editingPiece = piece },
+                        onOpenAddEtiquette = { x, y ->
+                            creationPosition = Pair(x, y)
+                            showAddEtiquetteDialog = true
+                        },
+                        onEditEtiquette = { etiquette -> editingEtiquette = etiquette },
+                        onOpenAddChaussure = { col, row ->
+                            creationCell = Pair(col, row)
+                            showAddChaussureDialog = true
+                        },
+                        onOpenEditChaussure = { chaussure -> editingChaussure = chaussure },
+                        onToggleFavorite = { chaussure -> viewModel.toggleFavorite(chaussure) },
+                        onDeleteChaussure = { id -> deletingChaussureId = id },
+                        onUpdatePosition = { id, x, y, sectionId -> viewModel.updateShoePosition(id, x, y, sectionId) },
+                        onUpdateEtiquettePosition = { id, x, y -> viewModel.updateEtiquettePosition(id, x, y) },
+                        onUpdateSearchQuery = { query -> viewModel.updateSearchQuery(query) },
+                        onSelectBrandFilter = { brand -> viewModel.setSelectedBrandFilter(brand) }
+                    )
 
-                1 -> StatsScreen(
-                    pieces = pieces,
-                    allChaussures = allChaussures
-                )
+                    1 -> StatsScreen(
+                        pieces = pieces,
+                        allChaussures = allChaussures
+                    )
 
-                2 -> OptionsScreen(
-                    pieces = pieces,
-                    chaussures = allChaussures
-                )
+                    2 -> OptionsScreen(
+                        pieces = pieces,
+                        chaussures = allChaussures
+                    )
+                }
             }
         }
     }
